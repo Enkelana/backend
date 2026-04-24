@@ -5,7 +5,7 @@ Backend `ASP.NET Core` për platformën `Innovation4Albania Dashboard`.
 ## Përmbajtja
 
 - API `.NET` për projektet, dashboard-in, OKR, riskun, kalendarin dhe përditësimet
-- strukturë e gatshme për deploy në Render
+- strukturë e gatshme për deploy në Render me `Docker`
 - konfigurim CORS me `ALLOWED_ORIGINS`
 
 ## Struktura
@@ -32,7 +32,12 @@ Backend-i hap endpoint-et nën `/api`.
 
 ## Deploy në Render
 
-Ky repo përfshin edhe `render.yaml`, por mund ta deploy-osh edhe manualisht si `Web Service`.
+Ky repo përfshin:
+
+- `render.yaml`
+- `Dockerfile`
+
+Render nuk mbështet `.NET` si native runtime në Blueprints, ndaj ky backend deploy-ohet si `docker` service.
 
 Shiko:
 
@@ -44,5 +49,5 @@ Shiko:
   Vendos URL-në e frontend-it të Render, p.sh.
   `https://innovation4albania-frontend.onrender.com`
 
-- `ASPNETCORE_URLS`
-  `http://0.0.0.0:10000`
+- `PORT`
+  `10000`
