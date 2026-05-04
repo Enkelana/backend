@@ -1,4 +1,4 @@
-using System.Text.Json.Serialization;
+﻿using System.Text.Json.Serialization;
 using Innovation4Albania.DashboardBackend.Api.Data;
 using Innovation4Albania.DashboardBackend.Api.Models;
 
@@ -76,6 +76,27 @@ api.MapGet("/reference-data/statuses", () =>
         color = ProjectStatuses.ToColor(status)
     })));
 
+api.MapGet("/reference-data/priorities", () =>
+    Results.Ok(ProjectPriorities.All.Select(priority => new
+    {
+        value = priority,
+        label = ProjectPriorities.ToLabel(priority)
+    })));
+
+api.MapGet("/reference-data/sectors", () =>
+    Results.Ok(ProjectSectors.All.Select(sector => new
+    {
+        value = sector,
+        label = ProjectSectors.ToLabel(sector)
+    })));
+
+api.MapGet("/reference-data/workgroup-roles", () =>
+    Results.Ok(WorkgroupRoles.All.Select(role => new
+    {
+        value = role,
+        label = WorkgroupRoles.ToLabel(role)
+    })));
+
 api.MapPost("/auth/login", (LoginRequest request, InnovationDashboardStore store) =>
 {
     var validationError = store.ValidateLogin(request);
@@ -118,6 +139,13 @@ api.MapGet("/dashboard/ministry-distribution", (string role, string? ministry, I
         : errorResult!;
 });
 
+api.MapGet("/dashboard/resource-capacity", (string role, string? ministry, InnovationDashboardStore store) =>
+{
+    return TryValidateContext(role, ministry, store, out var context, out var errorResult)
+        ? Results.Ok(store.GetResourceCapacitySummary(context))
+        : errorResult!;
+});
+
 api.MapGet("/projects", (string role, string? ministry, string? status, string? query, InnovationDashboardStore store) =>
 {
     return TryValidateContext(role, ministry, store, out var context, out var errorResult)
@@ -134,7 +162,7 @@ api.MapGet("/projects/{id}", (string id, string role, string? ministry, Innovati
 
     var project = store.GetProjectById(id, context);
     return project is null
-        ? Results.NotFound(new ApiErrorResponse("not_found", "Projekti nuk u gjet ose nuk është i aksesueshëm për këtë përdorues."))
+        ? Results.NotFound(new ApiErrorResponse("not_found", "Projekti nuk u gjet ose nuk Ã«shtÃ« i aksesueshÃ«m pÃ«r kÃ«tÃ« pÃ«rdorues."))
         : Results.Ok(project);
 });
 
@@ -150,6 +178,18 @@ api.MapPost("/projects", (string role, string? ministry, CreateProjectRequest re
         : Results.BadRequest(new ApiErrorResponse("project_create_failed", error!));
 });
 
+api.MapPut("/projects/{id}", (string id, string role, string? ministry, CreateProjectRequest request, InnovationDashboardStore store) =>
+{
+    if (!TryValidateContext(role, ministry, store, out var context, out var errorResult))
+    {
+        return errorResult!;
+    }
+
+    return store.TryUpdateProject(context, id, request, out var project, out var error)
+        ? Results.Ok(project)
+        : Results.BadRequest(new ApiErrorResponse("project_update_failed", error!));
+});
+
 api.MapGet("/projects/{id}/events", (string id, string role, string? ministry, InnovationDashboardStore store) =>
 {
     if (!TryValidateContext(role, ministry, store, out var context, out var errorResult))
@@ -159,7 +199,7 @@ api.MapGet("/projects/{id}/events", (string id, string role, string? ministry, I
 
     if (store.GetProjectById(id, context) is null)
     {
-        return Results.NotFound(new ApiErrorResponse("not_found", "Projekti nuk u gjet ose nuk është i aksesueshëm për këtë përdorues."));
+        return Results.NotFound(new ApiErrorResponse("not_found", "Projekti nuk u gjet ose nuk Ã«shtÃ« i aksesueshÃ«m pÃ«r kÃ«tÃ« pÃ«rdorues."));
     }
 
     return Results.Ok(store.GetEventsForProject(id, context));
@@ -174,7 +214,7 @@ api.MapGet("/projects/{id}/ai-insights", (string id, string role, string? minist
 
     var insights = store.GetProjectAiInsights(id, context);
     return insights is null
-        ? Results.NotFound(new ApiErrorResponse("not_found", "Projekti nuk u gjet ose nuk është i aksesueshëm për këtë përdorues."))
+        ? Results.NotFound(new ApiErrorResponse("not_found", "Projekti nuk u gjet ose nuk Ã«shtÃ« i aksesueshÃ«m pÃ«r kÃ«tÃ« pÃ«rdorues."))
         : Results.Ok(insights);
 });
 
@@ -271,3 +311,4 @@ api.MapPost("/ai/chat", (string role, string? ministry, AiChatRequest request, I
 });
 
 app.Run();
+

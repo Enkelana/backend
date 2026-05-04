@@ -1,4 +1,4 @@
-namespace Innovation4Albania.DashboardBackend.Api.Models;
+﻿namespace Innovation4Albania.DashboardBackend.Api.Models;
 
 public sealed record LoginRequest(string Role, string? Ministry, string? Name);
 
@@ -35,6 +35,27 @@ public sealed record ObjectiveResponse(
     int Progress,
     IReadOnlyList<KeyResultResponse> KeyResults);
 
+public sealed record WorkgroupMemberResponse(
+    string Id,
+    string Name,
+    string Role,
+    string RoleLabel,
+    string Unit,
+    int AllocationPercent);
+
+public sealed record ResourceCapacitySummaryResponse(
+    int TotalPeople,
+    int AverageTeamSize,
+    int AverageCapacityUtilization,
+    int LeadershipRoles,
+    int CrossInstitutionProjects,
+    IReadOnlyList<ResourceUnitAllocationResponse> UnitAllocations);
+
+public sealed record ResourceUnitAllocationResponse(
+    string Unit,
+    int People,
+    int CapacityPercent);
+
 public sealed record ProjectResponse(
     string Id,
     string Code,
@@ -43,6 +64,10 @@ public sealed record ProjectResponse(
     IReadOnlyList<string> Ministries,
     string? Agency,
     string Status,
+    string Priority,
+    string PriorityLabel,
+    string Sector,
+    string SectorLabel,
     int TotalPhases,
     int CurrentPhase,
     DateTimeOffset StartDate,
@@ -55,11 +80,13 @@ public sealed record ProjectResponse(
     ProjectOkr Okr,
     string Risk,
     IReadOnlyList<string> Team,
+    IReadOnlyList<WorkgroupMemberResponse> TeamMembers,
     string Lead,
-    DateTimeOffset LastUpdated,
     int UpdateCadenceDays,
+    DateTimeOffset LastUpdated,
     int OkrAverage,
     bool IsOverdue,
+    int TotalCapacityPercent,
     IReadOnlyList<ObjectiveResponse> Objectives);
 
 public sealed record ProjectEventResponse(
@@ -205,6 +232,12 @@ public sealed record KeyResultInput(
     int Target,
     string Unit);
 
+public sealed record WorkgroupMemberInput(
+    string Name,
+    string Role,
+    string Unit,
+    int AllocationPercent);
+
 public sealed record CreateProjectRequest(
     string Code,
     string Name,
@@ -212,6 +245,8 @@ public sealed record CreateProjectRequest(
     IReadOnlyList<string> Ministries,
     string? Agency,
     string Status,
+    string Priority,
+    string Sector,
     int TotalPhases,
     int CurrentPhase,
     DateTimeOffset StartDate,
@@ -220,6 +255,7 @@ public sealed record CreateProjectRequest(
     ProjectOkr Okr,
     string Risk,
     IReadOnlyList<string> Team,
+    IReadOnlyList<WorkgroupMemberInput> TeamMembers,
     string Lead,
     int UpdateCadenceDays,
     IReadOnlyList<ObjectiveInput> Objectives);
@@ -248,3 +284,4 @@ public sealed record CreateProjectChangeProposalRequest(
 public sealed record AiChatRequest(string Message);
 
 public sealed record ApiErrorResponse(string Code, string Message);
+

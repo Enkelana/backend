@@ -137,6 +137,45 @@ public sealed class InnovationDashboardStore
             .ToList();
     }
 
+    public ResourceCapacitySummaryResponse GetResourceCapacitySummary(UserContext context)
+    {
+        var visible = GetVisibleProjects(context);
+        if (visible.Count == 0)
+        {
+            return new ResourceCapacitySummaryResponse(0, 0, 0, 0, 0, []);
+        }
+
+        var members = visible.SelectMany(project => project.TeamMembers).ToList();
+        var totalPeople = members
+            .Select(member => member.Name.Trim())
+            .Where(name => name.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Count();
+
+        var averageTeamSize = (int)Math.Round(visible.Average(project => project.TeamMembers.Count));
+        var averageCapacity = (int)Math.Round(visible.Average(project => project.TotalCapacityPercent));
+        var leadershipRoles = members.Count(member => member.Role is WorkgroupRoles.ProjectLead or WorkgroupRoles.OkrOwner);
+        var crossInstitutionProjects = visible.Count(project => project.Ministries.Count > 1);
+
+        var unitAllocations = members
+            .GroupBy(member => string.IsNullOrWhiteSpace(member.Unit) ? "Njësi e pacaktuar" : member.Unit.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Select(group => new ResourceUnitAllocationResponse(
+                group.Key,
+                group.Select(member => member.Name).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
+                group.Sum(member => member.AllocationPercent)))
+            .OrderByDescending(item => item.CapacityPercent)
+            .ThenBy(item => item.Unit)
+            .ToList();
+
+        return new ResourceCapacitySummaryResponse(
+            totalPeople,
+            averageTeamSize,
+            averageCapacity,
+            leadershipRoles,
+            crossInstitutionProjects,
+            unitAllocations);
+    }
+
     public IReadOnlyList<PerformanceScoreItem> GetPerformanceScores(UserContext context) =>
         GetVisibleProjects(context)
             .OrderByDescending(project => project.OkrAverage)
@@ -174,7 +213,13 @@ public sealed class InnovationDashboardStore
             visible = visible.Where(project =>
                     project.Name.Contains(normalized, StringComparison.OrdinalIgnoreCase) ||
                     project.Code.Contains(normalized, StringComparison.OrdinalIgnoreCase) ||
-                    project.Ministries.Any(ministry => ministry.Contains(normalized, StringComparison.OrdinalIgnoreCase)))
+                    project.Ministries.Any(ministry => ministry.Contains(normalized, StringComparison.OrdinalIgnoreCase)) ||
+                    ProjectPriorities.ToLabel(project.Priority).Contains(normalized, StringComparison.OrdinalIgnoreCase) ||
+                    ProjectSectors.ToLabel(project.Sector).Contains(normalized, StringComparison.OrdinalIgnoreCase) ||
+                    project.TeamMembers.Any(member =>
+                        member.Name.Contains(normalized, StringComparison.OrdinalIgnoreCase) ||
+                        WorkgroupRoles.ToLabel(member.Role).Contains(normalized, StringComparison.OrdinalIgnoreCase) ||
+                        member.Unit.Contains(normalized, StringComparison.OrdinalIgnoreCase)))
                 .ToList();
         }
 
@@ -197,10 +242,82 @@ public sealed class InnovationDashboardStore
 
         if (!ApplicationRoles.CanCreateProjects(context.Role))
         {
-            error = "Vetëm Drejtori i Inovacionit mund të krijojë projekte.";
+            error = "Vetëm Drejtori i Agjencisë dhe Drejtori i Inovacionit Publik mund të krijojnë projekte.";
             return false;
         }
 
+        if (!TryValidateProjectRequest(request, out error))
+        {
+            return false;
+        }
+
+        var projectNumber = _projects.Count + 1;
+        var now = DateTimeOffset.UtcNow;
+        var teamMembers = BuildTeamMembersForRequest(projectNumber, request);
+        var project = new ProjectState(
+            $"p{projectNumber}",
+            request.Code.Trim(),
+            request.Name.Trim(),
+            request.Description.Trim(),
+            request.Ministries.Count == 0 ? ["—"] : request.Ministries.Select(item => item.Trim()).ToList(),
+            string.IsNullOrWhiteSpace(request.Agency) ? null : request.Agency.Trim(),
+            request.Status,
+            request.Priority,
+            request.Sector,
+            Math.Max(1, request.TotalPhases),
+            Math.Clamp(request.CurrentPhase, 1, Math.Max(1, request.TotalPhases)),
+            request.StartDate,
+            request.EndDate,
+            Math.Clamp(request.Progress, 0, 100),
+            request.Okr,
+            request.Risk,
+            teamMembers.Select(member => member.Name).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+            teamMembers,
+            request.Lead.Trim(),
+            14,
+            now,
+            request.Objectives.Select((objective, index) => ToObjectiveState($"obj-{projectNumber}-{index + 1}", objective)).ToList());
+
+        _projects.Add(project);
+        response = ToResponse(project);
+        error = null;
+        return true;
+    }
+
+    public bool TryUpdateProject(UserContext context, string id, CreateProjectRequest request, out ProjectResponse? response, out string? error)
+    {
+        response = null;
+
+        if (!ApplicationRoles.CanCreateProjects(context.Role))
+        {
+            error = "Vetëm Drejtori i Agjencisë dhe Drejtori i Inovacionit Publik mund të editojnë projekte.";
+            return false;
+        }
+
+        if (!TryValidateProjectRequest(request, out error))
+        {
+            return false;
+        }
+
+        var project = GetVisibleProjects(context)
+            .FirstOrDefault(item => string.Equals(item.Id, id, StringComparison.OrdinalIgnoreCase));
+
+        if (project is null)
+        {
+            error = "Projekti nuk u gjet.";
+            return false;
+        }
+
+        ApplyRequestToProjectState(project, request);
+        project.LastUpdated = DateTimeOffset.UtcNow;
+
+        response = ToResponse(project);
+        error = null;
+        return true;
+    }
+
+    private static bool TryValidateProjectRequest(CreateProjectRequest request, out string? error)
+    {
         if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.Code))
         {
             error = "Kodi dhe emri i projektit janë të detyrueshëm.";
@@ -213,34 +330,76 @@ public sealed class InnovationDashboardStore
             return false;
         }
 
-        var now = DateTimeOffset.UtcNow;
-        var project = new ProjectState(
-            $"p{_projects.Count + 1}",
-            request.Code.Trim(),
-            request.Name.Trim(),
-            request.Description.Trim(),
-            request.Ministries.Count == 0 ? ["—"] : request.Ministries.Select(item => item.Trim()).ToList(),
-            string.IsNullOrWhiteSpace(request.Agency) ? null : request.Agency.Trim(),
-            request.Status,
-            request.TotalPhases,
-            request.CurrentPhase,
-            request.StartDate,
-            request.EndDate,
-            request.Progress,
-            request.Okr,
-            request.Risk,
-            request.Team.Select(item => item.Trim()).Where(item => item.Length > 0).ToList(),
-            request.Lead.Trim(),
-            request.UpdateCadenceDays,
-            now,
-            request.Objectives.Select((objective, index) => ToObjectiveState($"obj-{_projects.Count + 1}-{index + 1}", objective)).ToList());
+        if (!ProjectPriorities.All.Contains(request.Priority))
+        {
+            error = "Prioriteti i zgjedhur nuk është i vlefshëm.";
+            return false;
+        }
 
-        _projects.Add(project);
-        response = ToResponse(project);
+        if (!ProjectSectors.All.Contains(request.Sector))
+        {
+            error = "Sektori i zgjedhur nuk është i vlefshëm.";
+            return false;
+        }
+
+        if (!RiskLevels.All.Contains(request.Risk))
+        {
+            error = "Niveli i riskut nuk është i vlefshëm.";
+            return false;
+        }
+
+        if (request.EndDate < request.StartDate)
+        {
+            error = "Data e mbylljes nuk mund të jetë më e hershme se data e nisjes.";
+            return false;
+        }
+
         error = null;
         return true;
     }
 
+    private void ApplyRequestToProjectState(ProjectState project, CreateProjectRequest request)
+    {
+        var projectNumber = ParseProjectNumber(project.Id);
+        var teamMembers = BuildTeamMembersForRequest(projectNumber, request);
+
+        project.Code = request.Code.Trim();
+        project.Name = request.Name.Trim();
+        project.Description = request.Description.Trim();
+        project.Agency = string.IsNullOrWhiteSpace(request.Agency) ? null : request.Agency.Trim();
+        project.Status = request.Status;
+        project.Priority = request.Priority;
+        project.Sector = request.Sector;
+        project.TotalPhases = Math.Max(1, request.TotalPhases);
+        project.CurrentPhase = Math.Clamp(request.CurrentPhase, 1, project.TotalPhases);
+        project.StartDate = request.StartDate;
+        project.EndDate = request.EndDate;
+        project.Progress = Math.Clamp(request.Progress, 0, 100);
+        project.Okr = request.Okr;
+        project.Risk = request.Risk;
+        project.Lead = request.Lead.Trim();
+        project.UpdateCadenceDays = 14;
+
+        project.Ministries.Clear();
+        project.Ministries.AddRange(request.Ministries.Count == 0
+            ? ["—"]
+            : request.Ministries.Select(item => item.Trim()).Where(item => item.Length > 0));
+
+        project.Team.Clear();
+        project.Team.AddRange(teamMembers.Select(member => member.Name).Distinct(StringComparer.OrdinalIgnoreCase));
+
+        project.TeamMembers.Clear();
+        project.TeamMembers.AddRange(teamMembers);
+
+        project.Objectives.Clear();
+        project.Objectives.AddRange(request.Objectives.Select((objective, index) => ToObjectiveState($"obj-{projectNumber}-{index + 1}", objective)));
+    }
+
+    private static int ParseProjectNumber(string projectId)
+    {
+        var digits = new string(projectId.Where(char.IsDigit).ToArray());
+        return int.TryParse(digits, out var number) && number > 0 ? number : 1;
+    }
     public IReadOnlyList<ProjectEventResponse> GetEventsForProject(string projectId, UserContext context)
     {
         var project = GetVisibleProjects(context).FirstOrDefault(item => item.Id == projectId);
@@ -282,10 +441,14 @@ public sealed class InnovationDashboardStore
                 "55 - 69",
                 scored.Where(item => GetPerformanceBucket(item.Score) == PerformanceBuckets.NeedsAttention).OrderByDescending(item => item.Score).ToList()),
             new(
-                PerformanceBuckets.Critical,
-                PerformanceBuckets.ToLabel(PerformanceBuckets.Critical),
-                "< 55",
-                scored.Where(item => GetPerformanceBucket(item.Score) == PerformanceBuckets.Critical).OrderByDescending(item => item.Score).ToList())
+                PerformanceBuckets.Completed,
+                PerformanceBuckets.ToLabel(PerformanceBuckets.Completed),
+                "Statusi: Përfunduara",
+                GetVisibleProjects(context)
+                    .Where(project => project.Status == ProjectStatuses.Completed)
+                    .OrderByDescending(project => project.OkrAverage)
+                    .Select(project => new PerformanceScoreItem(project.Id, project.Code, project.Name, project.OkrAverage, project.Progress, project.Risk))
+                    .ToList())
         ];
     }
 
@@ -372,7 +535,7 @@ public sealed class InnovationDashboardStore
 
         if (!ApplicationRoles.CanSubmitUpdates(context.Role))
         {
-            error = "Vetëm ekspertët dhe drejtori mund të shtojnë përditësime.";
+            error = "Vetëm ekspertët dhe drejtori mund të shtojnë përditësime dyjavore.";
             return false;
         }
 
@@ -596,7 +759,7 @@ public sealed class InnovationDashboardStore
         >= 85 => PerformanceBuckets.Excellent,
         >= 70 => PerformanceBuckets.Good,
         >= 55 => PerformanceBuckets.NeedsAttention,
-        _ => PerformanceBuckets.Critical
+        _ => PerformanceBuckets.NeedsAttention
     };
 
     private static string ShortMinistryName(string ministry) => ministry switch
@@ -649,6 +812,7 @@ public sealed class InnovationDashboardStore
         var daysRemaining = Math.Max(0, (int)Math.Ceiling((project.EndDate - DateTimeOffset.UtcNow).TotalDays));
         var delayDays = CalculateDelayDays(project);
         var okrAverage = CalculateOkrAverage(project.Okr);
+        var totalCapacityPercent = project.TeamMembers.Sum(member => member.AllocationPercent);
 
         return new ProjectResponse(
             project.Id,
@@ -658,6 +822,10 @@ public sealed class InnovationDashboardStore
             project.Ministries,
             project.Agency,
             project.Status,
+            project.Priority,
+            ProjectPriorities.ToLabel(project.Priority),
+            project.Sector,
+            ProjectSectors.ToLabel(project.Sector),
             project.TotalPhases,
             project.CurrentPhase,
             project.StartDate,
@@ -670,11 +838,13 @@ public sealed class InnovationDashboardStore
             project.Okr,
             project.Risk,
             project.Team,
+            project.TeamMembers.Select(ToTeamMemberResponse).ToList(),
             project.Lead,
-            project.LastUpdated,
             project.UpdateCadenceDays,
+            project.LastUpdated,
             okrAverage,
             IsOverdue(project),
+            totalCapacityPercent,
             project.Objectives.Select(ToObjectiveResponse).ToList());
     }
 
@@ -691,6 +861,44 @@ public sealed class InnovationDashboardStore
             input.Title.Trim(),
             string.IsNullOrWhiteSpace(input.Owner) ? "Drejtoria e Inovacionit" : input.Owner.Trim(),
             input.KeyResults.Select((kr, index) => new KeyResultState($"{id}-kr-{index + 1}", kr.Title.Trim(), kr.Progress, kr.Target, kr.Unit.Trim())).ToList());
+
+    private static List<WorkgroupMemberState> BuildTeamMembersForRequest(int projectNumber, CreateProjectRequest request)
+    {
+        var structuredMembers = request.TeamMembers
+            .Where(member => !string.IsNullOrWhiteSpace(member.Name))
+            .Select((member, index) => new WorkgroupMemberState(
+                $"team-{projectNumber}-{index + 1}",
+                member.Name.Trim(),
+                WorkgroupRoles.All.Contains(member.Role) ? member.Role : WorkgroupRoles.ProjectOfficer,
+                string.IsNullOrWhiteSpace(member.Unit) ? "Njësi qendrore" : member.Unit.Trim(),
+                Math.Clamp(member.AllocationPercent, 10, 100)))
+            .ToList();
+
+        if (structuredMembers.Count > 0)
+        {
+            return structuredMembers;
+        }
+
+        return request.Team
+            .Select(item => item.Trim())
+            .Where(item => item.Length > 0)
+            .Select((name, index) => new WorkgroupMemberState(
+                $"team-{projectNumber}-{index + 1}",
+                name,
+                index == 0 ? WorkgroupRoles.ProjectLead : WorkgroupRoles.ProjectOfficer,
+                "Njësi qendrore",
+                index == 0 ? 80 : 50))
+            .ToList();
+    }
+
+    private static WorkgroupMemberResponse ToTeamMemberResponse(WorkgroupMemberState member) =>
+        new(
+            member.Id,
+            member.Name,
+            member.Role,
+            WorkgroupRoles.ToLabel(member.Role),
+            member.Unit,
+            member.AllocationPercent);
 
     private ProjectChangeProposalResponse ToChangeProposalResponse(ProjectChangeProposalState proposal)
     {
@@ -743,7 +951,7 @@ public sealed class InnovationDashboardStore
         if (response.DelayDays > 0)
         {
             concerns.Add($"Projekti llogaritet me rreth {response.DelayDays} ditë vonesë.");
-            recommendations.Add("Vendos kontroll javor deri sa devijimi të rikthehet nën 5%.");
+            recommendations.Add("Vendos kontroll dyjavor deri sa devijimi të rikthehet nën 5%.");
         }
 
         if (response.OkrAverage >= 80)
@@ -753,7 +961,7 @@ public sealed class InnovationDashboardStore
 
         positives.Add($"Indikatori më i fortë është {strongest.Key} me {strongest.Value}%.");
         concerns.Add($"Fusha që kërkon më shumë ndërhyrje është {weakest.Key} me {weakest.Value}%.");
-        recommendations.Add($"Forco planin e punës për {weakest.Key} në ciklin e ardhshëm javor.");
+        recommendations.Add($"Forco planin e punës për {weakest.Key} në ciklin e ardhshëm dyjavor.");
 
         var attentionLevel = project.Risk switch
         {
@@ -857,6 +1065,8 @@ public sealed class InnovationDashboardStore
             ["Ministria e Infrastrukturës dhe Energjisë", "Ministria e Ekonomisë, Kulturës dhe Inovacionit"],
             "Agjencia Shtetërore për Shpronësimin",
             ProjectStatuses.Active,
+            ProjectPriorities.Critical,
+            ProjectSectors.PublicServices,
             10,
             7,
             IsoOffset(-220),
@@ -865,8 +1075,14 @@ public sealed class InnovationDashboardStore
             new ProjectOkr(80, 75, 70, 95),
             RiskLevels.Medium,
             ["Erblin Malkurti", "Evilsidio Tosku", "Nensi Ahmetbeja", "Ina Peleshka"],
+            [
+                new WorkgroupMemberState("team-1-1", "Erblin Malkurti", WorkgroupRoles.ProjectLead, "ASHSH", 90),
+                new WorkgroupMemberState("team-1-2", "Evilsidio Tosku", WorkgroupRoles.BusinessAnalyst, "ASHSH", 70),
+                new WorkgroupMemberState("team-1-3", "Nensi Ahmetbeja", WorkgroupRoles.MinistryRepresentative, "Ministria e Infrastrukturës dhe Energjisë", 60),
+                new WorkgroupMemberState("team-1-4", "Ina Peleshka", WorkgroupRoles.OkrOwner, "Ministria e Ekonomisë, Kulturës dhe Inovacionit", 55)
+            ],
             "Erblin Malkurti",
-            7,
+            14,
             IsoOffset(-5),
             [
                 new ObjectiveState("obj-1", "Përshpejtimi i shpronësimeve", "ASHSH",
@@ -897,6 +1113,28 @@ public sealed class InnovationDashboardStore
         var qualityScore = Math.Clamp(progress + 28, 45, 96);
         var impactScore = Math.Clamp(progress + 24, 45, 97);
         var collaborationScore = Math.Clamp(progress + 20, 40, 94);
+        var priority = (projectNumber % 4) switch
+        {
+            0 => ProjectPriorities.Critical,
+            1 => ProjectPriorities.High,
+            2 => ProjectPriorities.Medium,
+            _ => ProjectPriorities.Low
+        };
+        var sector = (projectNumber % 6) switch
+        {
+            0 => ProjectSectors.Infrastructure,
+            1 => ProjectSectors.Digitalization,
+            2 => ProjectSectors.Governance,
+            3 => ProjectSectors.PublicServices,
+            4 => ProjectSectors.Education,
+            _ => ProjectSectors.Environment
+        };
+        var members = new List<WorkgroupMemberState>
+        {
+            new($"team-{idNumber}-1", $"Përgjegjësi {projectNumber}", WorkgroupRoles.ProjectLead, ministry, 80),
+            new($"team-{idNumber}-2", $"Koordinator {projectNumber}", WorkgroupRoles.TechnicalCoordinator, "Njësi teknike", 60),
+            new($"team-{idNumber}-3", $"Analist {projectNumber}", WorkgroupRoles.BusinessAnalyst, "Njësi projekti", 45)
+        };
 
         return new ProjectState(
             $"p{idNumber}",
@@ -906,6 +1144,8 @@ public sealed class InnovationDashboardStore
             [ministry],
             null,
             status,
+            priority,
+            sector,
             totalPhases,
             currentPhase,
             IsoOffset(-90 - (projectNumber * 12)),
@@ -913,9 +1153,10 @@ public sealed class InnovationDashboardStore
             progress,
             new ProjectOkr(deadlineScore, qualityScore, impactScore, collaborationScore),
             risk,
-            ["Anëtar 1", "Anëtar 2"],
+            members.Select(member => member.Name).ToList(),
+            members,
             $"Përgjegjësi {projectNumber}",
-            7,
+            14,
             lastUpdated,
             BuildSampleObjectives($"obj-{idNumber}", $"Objektivi {projectNumber}"));
     }
@@ -930,7 +1171,7 @@ public sealed class InnovationDashboardStore
         new("portfolio-2", "Rritja e maturitetit OKR", "Drejtoria e Inovacionit",
         [
             new KeyResultState("portfolio-2-kr-1", "Mesatarja e OKR të portofolit", 73, 80, "%"),
-            new KeyResultState("portfolio-2-kr-2", "Projektet me KR të përditësuar çdo javë", 68, 90, "%")
+            new KeyResultState("portfolio-2-kr-2", "Projektet me KR të përditësuar çdo 14 ditë", 68, 90, "%")
         ])
     ];
 
@@ -958,6 +1199,8 @@ public sealed class InnovationDashboardStore
         List<string> ministries,
         string? agency,
         string status,
+        string priority,
+        string sector,
         int totalPhases,
         int currentPhase,
         DateTimeOffset startDate,
@@ -966,30 +1209,35 @@ public sealed class InnovationDashboardStore
         ProjectOkr okr,
         string risk,
         List<string> team,
+        List<WorkgroupMemberState> teamMembers,
         string lead,
         int updateCadenceDays,
         DateTimeOffset lastUpdated,
         List<ObjectiveState> objectives)
     {
         public string Id { get; } = id;
-        public string Code { get; } = code;
-        public string Name { get; } = name;
-        public string Description { get; } = description;
+        public string Code { get; set; } = code;
+        public string Name { get; set; } = name;
+        public string Description { get; set; } = description;
         public List<string> Ministries { get; } = ministries;
-        public string? Agency { get; } = agency;
+        public string? Agency { get; set; } = agency;
         public string Status { get; set; } = status;
-        public int TotalPhases { get; } = totalPhases;
-        public int CurrentPhase { get; } = currentPhase;
-        public DateTimeOffset StartDate { get; } = startDate;
-        public DateTimeOffset EndDate { get; } = endDate;
+        public string Priority { get; set; } = priority;
+        public string Sector { get; set; } = sector;
+        public int TotalPhases { get; set; } = totalPhases;
+        public int CurrentPhase { get; set; } = currentPhase;
+        public DateTimeOffset StartDate { get; set; } = startDate;
+        public DateTimeOffset EndDate { get; set; } = endDate;
         public int Progress { get; set; } = progress;
         public ProjectOkr Okr { get; set; } = okr;
         public string Risk { get; set; } = risk;
         public List<string> Team { get; } = team;
-        public string Lead { get; } = lead;
-        public int UpdateCadenceDays { get; } = updateCadenceDays;
+        public List<WorkgroupMemberState> TeamMembers { get; } = teamMembers;
+        public string Lead { get; set; } = lead;
+        public int UpdateCadenceDays { get; set; } = updateCadenceDays;
         public DateTimeOffset LastUpdated { get; set; } = lastUpdated;
         public List<ObjectiveState> Objectives { get; } = objectives;
+        public int TotalCapacityPercent => TeamMembers.Sum(member => member.AllocationPercent);
         public int OkrAverage => CalculateOkrAverage(Okr);
         public int ExpectedProgress => CalculateExpectedProgress(StartDate, EndDate);
         public int DelayDays => CalculateDelayDays(this);
@@ -1000,6 +1248,13 @@ public sealed class InnovationDashboardStore
     private sealed record ObjectiveState(string Id, string Title, string Owner, List<KeyResultState> KeyResults);
 
     private sealed record KeyResultState(string Id, string Title, int Progress, int Target, string Unit);
+
+    private sealed record WorkgroupMemberState(
+        string Id,
+        string Name,
+        string Role,
+        string Unit,
+        int AllocationPercent);
 
     private sealed record WeeklyUpdateState(
         string Id,
@@ -1031,6 +1286,7 @@ internal static class ObjectPipeExtensions
 {
     public static TResult Pipe<TSource, TResult>(this TSource source, Func<TSource, TResult> selector) => selector(source);
 }
+
 
 
 
