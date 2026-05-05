@@ -163,6 +163,8 @@ public sealed record AiInsightResponse(
     string AttentionLevel,
     string Summary,
     string RiskExplanation,
+    int RiskScore,
+    string RiskPrediction,
     int ConfidenceScore,
     IReadOnlyList<string> PositiveSignals,
     IReadOnlyList<string> Concerns,

@@ -19,7 +19,7 @@ public interface IInnovationDashboardRepository
     bool TryCreateProject(UserContext context, CreateProjectRequest request, out ProjectResponse? response, out string? error);
     bool TryUpdateProject(UserContext context, string id, CreateProjectRequest request, out ProjectResponse? response, out string? error);
     IReadOnlyList<ProjectEventResponse> GetEventsForProject(string projectId, UserContext context);
-    AiInsightResponse? GetProjectAiInsights(string projectId, UserContext context);
+    Task<AiInsightResponse?> GetProjectAiInsights(string projectId, UserContext context, string apiKey);
     IReadOnlyList<PerformanceBoardColumnResponse> GetPerformanceBoard(UserContext context);
     PortfolioOkrResponse GetPortfolioOkr(UserContext context);
     bool TryCreatePortfolioObjective(UserContext context, CreatePortfolioObjectiveRequest request, out ObjectiveResponse? response, out string? error);
@@ -30,5 +30,5 @@ public interface IInnovationDashboardRepository
     bool TryCreateChangeProposal(UserContext context, CreateProjectChangeProposalRequest request, out ProjectChangeProposalResponse? response, out string? error);
     CalendarMonthResponse GetCalendarMonth(UserContext context, DateOnly month);
     IReadOnlyList<object> GetUpcomingEvents(UserContext context, int limit);
-    AiChatResponse GetAiChatReply(UserContext context, AiChatRequest request);
+    Task<AiChatResponse> GetAiChatReply(UserContext context, AiChatRequest request, string apiKey);
 }

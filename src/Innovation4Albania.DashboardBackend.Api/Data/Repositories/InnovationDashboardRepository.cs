@@ -19,8 +19,13 @@ public sealed class InnovationDashboardRepository(InnovationDashboardStore store
     public bool TryCreateProject(UserContext context, CreateProjectRequest request, out ProjectResponse? response, out string? error) => store.TryCreateProject(context, request, out response, out error);
     public bool TryUpdateProject(UserContext context, string id, CreateProjectRequest request, out ProjectResponse? response, out string? error) => store.TryUpdateProject(context, id, request, out response, out error);
     public IReadOnlyList<ProjectEventResponse> GetEventsForProject(string projectId, UserContext context) => store.GetEventsForProject(projectId, context);
-    public AiInsightResponse? GetProjectAiInsights(string projectId, UserContext context) => store.GetProjectAiInsights(projectId, context);
-    public IReadOnlyList<PerformanceBoardColumnResponse> GetPerformanceBoard(UserContext context) => store.GetPerformanceBoard(context);
+
+    public Task<AiInsightResponse?> GetProjectAiInsights(string projectId, UserContext context, string apiKey)
+        => store.GetProjectAiInsights(projectId, context, apiKey);
+
+    public IReadOnlyList<PerformanceBoardColumnResponse> GetPerformanceBoard(UserContext context)
+        => store.GetPerformanceBoard(context);
+
     public PortfolioOkrResponse GetPortfolioOkr(UserContext context) => store.GetPortfolioOkr(context);
     public bool TryCreatePortfolioObjective(UserContext context, CreatePortfolioObjectiveRequest request, out ObjectiveResponse? response, out string? error) => store.TryCreatePortfolioObjective(context, request, out response, out error);
     public IReadOnlyList<RiskDeviationResponse> GetRiskDeviations(UserContext context) => store.GetRiskDeviations(context);
@@ -30,5 +35,6 @@ public sealed class InnovationDashboardRepository(InnovationDashboardStore store
     public bool TryCreateChangeProposal(UserContext context, CreateProjectChangeProposalRequest request, out ProjectChangeProposalResponse? response, out string? error) => store.TryCreateChangeProposal(context, request, out response, out error);
     public CalendarMonthResponse GetCalendarMonth(UserContext context, DateOnly month) => store.GetCalendarMonth(context, month);
     public IReadOnlyList<object> GetUpcomingEvents(UserContext context, int limit) => store.GetUpcomingEvents(context, limit);
-    public AiChatResponse GetAiChatReply(UserContext context, AiChatRequest request) => store.GetAiChatReply(context, request);
+    public Task<AiChatResponse> GetAiChatReply(UserContext context, AiChatRequest request, string apiKey)
+        => store.GetAiChatReply(context, request, apiKey);
 }

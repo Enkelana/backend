@@ -9,5 +9,5 @@ public interface IProjectService
     bool TryCreateProject(UserContext context, CreateProjectRequest request, out ProjectResponse? response, out string? error);
     bool TryUpdateProject(UserContext context, string id, CreateProjectRequest request, out ProjectResponse? response, out string? error);
     IReadOnlyList<ProjectEventResponse> GetProjectEvents(string id, UserContext context);
-    AiInsightResponse? GetProjectAiInsights(string id, UserContext context);
+    Task<AiInsightResponse?> GetProjectAiInsights(string id, UserContext context, string apiKey);
 }

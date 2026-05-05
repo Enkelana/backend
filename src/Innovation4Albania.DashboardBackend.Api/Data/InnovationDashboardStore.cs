@@ -1,6 +1,8 @@
 ﻿using System.Globalization;
 using Innovation4Albania.DashboardBackend.Api.Constants;
 using Innovation4Albania.DashboardBackend.Api.Models;
+using System.Text;
+using System.Text.Json;
 
 namespace Innovation4Albania.DashboardBackend.Api.Data;
 
@@ -407,15 +409,12 @@ public sealed class InnovationDashboardStore
         return project is null ? [] : BuildProjectEvents(project);
     }
 
-    public AiInsightResponse? GetProjectAiInsights(string projectId, UserContext context)
+    public async Task<AiInsightResponse?> GetProjectAiInsights(string projectId, UserContext context, string apiKey)
     {
         var project = GetVisibleProjects(context).FirstOrDefault(item => item.Id == projectId);
-        if (project is null)
-        {
-            return null;
-        }
+        if (project is null) return null;
 
-        return BuildAiInsights(project);
+        return await BuildAiInsights(project, apiKey);
     }
 
     public IReadOnlyList<PerformanceBoardColumnResponse> GetPerformanceBoard(UserContext context)
@@ -710,37 +709,119 @@ public sealed class InnovationDashboardStore
             .ToList();
     }
 
-    public AiChatResponse GetAiChatReply(UserContext context, AiChatRequest request)
+    public async Task<AiChatResponse> GetAiChatReply(UserContext context, AiChatRequest request, string apiKey)
+    {
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            return BuildAiChatFallback(context, request);
+        }
+
+        try
+        {
+            var visible = GetVisibleProjects(context);
+            var delayed = visible.Where(p => p.DelayDays > 0)
+                                 .OrderByDescending(p => p.DelayDays)
+                                 .Take(3).ToList();
+            var avgOkr = visible.Count == 0 ? 0 : (int)Math.Round(visible.Average(p => p.OkrAverage));
+            var highRisk = visible
+                .Where(p => p.Risk is RiskLevels.High or RiskLevels.Critical)
+                .Select(p => $"{p.Code} ({p.Name})")
+                .ToList();
+
+            var systemPrompt = $"""
+            Jeni një asistent AI për platformën Innovation4Albania.
+            Përgjigjuni GJITHMONË në shqip. Ji konciz dhe praktik.
+            
+            KONTEKSTI:
+            - Roli: {ApplicationRoles.ToDisplayLabel(context.Role)}
+            - Ministria: {context.Ministry ?? "Të gjitha"}
+            - Projekte totale: {visible.Count}
+            - OKR mesatar: {avgOkr}%
+            - Projekte me vonesë: {string.Join(", ", delayed.Select(p => p.Code))}
+            - Risk i lartë/kritik: {string.Join(", ", highRisk)}
+            """;
+
+            var geminiRequest = new
+            {
+                system_instruction = new { parts = new[] { new { text = systemPrompt } } },
+                contents = new[]
+                {
+                new { role = "user", parts = new[] { new { text = request.Message } } }
+            },
+                generationConfig = new { maxOutputTokens = 2048, temperature = 0.5 }
+            };
+
+            using var http = new HttpClient();
+            var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={apiKey}";
+
+            var json = JsonSerializer.Serialize(geminiRequest);
+            var content = new StringContent(json, Encoding.UTF8);
+            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+
+            var httpResponse = await http.PostAsync(url, content);
+            var responseBody = await httpResponse.Content.ReadAsStringAsync();
+
+            if (!httpResponse.IsSuccessStatusCode)
+            {
+                throw new Exception($"Gemini error {httpResponse.StatusCode}: {responseBody}");
+            }
+
+            var doc = JsonDocument.Parse(responseBody);
+            var answer = doc.RootElement
+                .GetProperty("candidates")[0]
+                .GetProperty("content")
+                .GetProperty("parts")[0]
+                .GetProperty("text")
+                .GetString() ?? "Nuk u mor përgjigje.";
+
+            return new AiChatResponse(
+                new ChatMessageResponse($"ai-{Guid.NewGuid():N}", "assistant", answer, DateTimeOffset.UtcNow),
+                ["Kontrollo projektet me devijim mbi 10%", "Verifiko KR-të me progres nën 60%", "Planifiko përditësimet javore"]);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"GEMINI CHAT ERROR: {ex.Message}");
+            return BuildAiChatFallback(context, request);
+        }
+    }
+
+    private AiChatResponse BuildAiChatFallback(UserContext context, AiChatRequest request)
     {
         var visible = GetVisibleProjects(context);
-        var highestRisk = visible.OrderByDescending(UrgencyRank).FirstOrDefault();
-        var delayed = visible.Where(project => project.DelayDays > 0).OrderByDescending(project => project.DelayDays).Take(3).ToList();
+        var delayed = visible
+            .Where(project => project.DelayDays > 0)
+            .OrderByDescending(project => project.DelayDays)
+            .Take(3)
+            .ToList();
         var avgOkr = visible.Count == 0 ? 0 : (int)Math.Round(visible.Average(project => project.OkrAverage));
+        var highRisk = visible
+            .Where(project => project.Risk is RiskLevels.High or RiskLevels.Critical)
+            .OrderByDescending(project => project.DeviationPercent)
+            .Take(3)
+            .ToList();
 
-        var question = request.Message.Trim();
-        var answer =
-            $"Nga analiza e portofolit për {ApplicationRoles.ToDisplayLabel(context.Role)}, OKR mesatar është {avgOkr}% dhe projekti që kërkon më shumë vëmendje është " +
-            $"{highestRisk?.Name ?? "nuk ka"}." +
-            (delayed.Count > 0
-                ? $" Projektet me devijimin më të madh janë: {string.Join(", ", delayed.Select(project => project.Code))}."
-                : " Aktualisht nuk ka projekte me vonesa kritike.");
+        var answer = new StringBuilder()
+            .Append($"Nga {visible.Count} projekte të aksesueshme, OKR mesatar është {avgOkr}%. ");
 
-        if (question.Contains("okr", StringComparison.OrdinalIgnoreCase))
+        if (highRisk.Count > 0)
         {
-            answer += " Fokusoni ndërhyrjen te KR-të me progres nën 60% dhe te projektet me devijim pozitiv mbi 12%.";
+            answer.Append("Prioriteti kryesor është ndjekja e projekteve me risk të lartë: ")
+                .Append(string.Join(", ", highRisk.Select(project => project.Code)))
+                .Append(". ");
         }
-        else if (question.Contains("risk", StringComparison.OrdinalIgnoreCase) || question.Contains("rrezik", StringComparison.OrdinalIgnoreCase))
+
+        if (delayed.Count > 0)
         {
-            answer += " Prioritet i parë duhet të jenë projektet me risk kritik dhe me afat nën 30 ditë.";
+            answer.Append("Projektet me vonesën më të madhe janë ")
+                .Append(string.Join(", ", delayed.Select(project => $"{project.Code} ({project.DelayDays} ditë)")))
+                .Append(". ");
         }
+
+        answer.Append("Pa Gemini:ApiKey po kthej analizë lokale bazuar në të dhënat e dashboard-it.");
 
         return new AiChatResponse(
-            new ChatMessageResponse($"ai-{Guid.NewGuid():N}", "assistant", answer, DateTimeOffset.UtcNow),
-            [
-                "Kontrollo projektet me devijim mbi 10%",
-                "Verifiko KR-të me progres nën 60%",
-                "Planifiko përditësimet javore të vonuara"
-            ]);
+            new ChatMessageResponse($"ai-{Guid.NewGuid():N}", "assistant", answer.ToString(), DateTimeOffset.UtcNow),
+            ["Kontrollo projektet me devijim mbi 10%", "Verifiko KR-të me progres nën 60%", "Planifiko përditësimet javore"]);
     }
 
     private IReadOnlyList<ProjectState> GetVisibleProjects(UserContext context)
@@ -920,7 +1001,8 @@ public sealed class InnovationDashboardStore
             proposal.Status);
     }
 
-    private static AiInsightResponse BuildAiInsights(ProjectState project)
+
+    private static async Task<AiInsightResponse> BuildAiInsights(ProjectState project, string apiKey)
     {
         var response = ToResponse(project);
         var weakest = new Dictionary<string, int>
@@ -939,30 +1021,140 @@ public sealed class InnovationDashboardStore
             ["bashkëpunimi"] = project.Okr.Collaboration
         }.OrderByDescending(item => item.Value).First();
 
+        var jsonStructure = "{\"summary\":\"max 1 fjali\",\"riskExplanation\":\"max 1 fjali\",\"riskScore\":0-100,\"riskPrediction\":\"max 1 fjali\",\"positives\":[\"1 fjali\",\"1 fjali\"],\"concerns\":[\"1 fjali\"],\"recommendations\":[\"1 fjali\",\"1 fjali\"]}";
+
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            return BuildAiInsightsFallback(project, response, weakest, strongest);
+        }
+
+        var prompt = $"Je një analist i platformës Innovation4Albania.\n" +
+             $"Analizo projektin dhe kthe VETËM një JSON objekt (pa markdown, pa backticks) me këtë strukturë:\n" +
+             $"{jsonStructure}\n\n" +
+             $"TË DHËNAT E PROJEKTIT:\n" +
+             $"- Emri: {project.Name}\n" +
+             $"- Statusi: {ProjectStatuses.ToLabel(project.Status)}\n" +
+             $"- Progresi: {project.Progress}%\n" +
+             $"- Progresi i pritur: {response.ExpectedProgress}%\n" +
+             $"- Devijimi: {response.DeviationPercent}%\n" +
+             $"- Risku: {RiskLevels.ToLabel(project.Risk)}\n" +
+             $"- OKR mesatar: {response.OkrAverage}%\n" +
+             $"- Afatet OKR: {project.Okr.Deadlines}%\n" +
+             $"- Cilësia OKR: {project.Okr.Quality}%\n" +
+             $"- Impakti OKR: {project.Okr.Impact}%\n" +
+             $"- Bashkëpunimi OKR: {project.Okr.Collaboration}%\n" +
+             $"- Ditë të mbetura: {response.DaysRemaining}\n" +
+             $"- Vonesa (ditë): {response.DelayDays}\n" +
+             $"- Fusha më e dobët: {weakest.Key} ({weakest.Value}%)\n" +
+             $"- Fusha më e fortë: {strongest.Key} ({strongest.Value}%)\n\n" +
+             $"RiskScore duhet të jetë 0 për risk minimal dhe 100 për risk ekstrem, duke peshuar riskun, devijimin, vonesat, OKR dhe afatin.\n" +
+             $"Përgjigju VETËM me JSON. Gjithçka në shqip." +
+             $"IMPORTANT: Mbaj çdo fushë MAKSIMUM 1 fjali. JSON duhet të jetë kompakt.";
+
+        try
+        {
+            var geminiRequest = new
+            {
+                contents = new[] { new { role = "user", parts = new[] { new { text = prompt } } } },
+                generationConfig = new { maxOutputTokens = 2048, temperature = 0.4 }
+            };
+
+            using var http = new HttpClient();
+            var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={apiKey}";
+            var json = JsonSerializer.Serialize(geminiRequest);
+            var content = new StringContent(json, Encoding.UTF8);
+            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+
+            var httpResponse = await http.PostAsync(url, content);
+            var responseBody = await httpResponse.Content.ReadAsStringAsync();
+
+            if (httpResponse.IsSuccessStatusCode)
+            {
+                var doc = JsonDocument.Parse(responseBody);
+                var rawText = doc.RootElement
+                    .GetProperty("candidates")[0]
+                    .GetProperty("content")
+                    .GetProperty("parts")[0]
+                    .GetProperty("text")
+                    .GetString() ?? "{}";
+
+                Console.WriteLine($"GEMINI RAW: {rawText}");
+
+                // Pastro markdown nëse Gemini kthen ```json ... ```
+                var cleanJson = rawText
+                .Replace("```json", "")
+                .Replace("```", "")
+                .Trim();
+
+                Console.WriteLine($"CLEAN JSON: {cleanJson}");
+                var parsed = JsonDocument.Parse(cleanJson).RootElement;
+
+                var summary = parsed.TryGetProperty("summary", out var s) ? s.GetString() ?? "" : "";
+                var riskExp = parsed.TryGetProperty("riskExplanation", out var r) ? r.GetString() ?? "" : "";
+                var riskScore = parsed.TryGetProperty("riskScore", out var rs) && rs.TryGetInt32(out var parsedRiskScore)
+                    ? Math.Clamp(parsedRiskScore, 0, 100)
+                    : CalculateRiskScore(project, response);
+                var riskPrediction = parsed.TryGetProperty("riskPrediction", out var rp) ? rp.GetString() ?? "" : "";
+                if (string.IsNullOrWhiteSpace(riskPrediction))
+                {
+                    riskPrediction = BuildRiskPrediction(riskScore);
+                }
+                var positives = parsed.TryGetProperty("positives", out var pos)
+                    ? pos.EnumerateArray().Select(x => x.GetString() ?? "").ToList()
+                    : new List<string>();
+                var concerns = parsed.TryGetProperty("concerns", out var con)
+                    ? con.EnumerateArray().Select(x => x.GetString() ?? "").ToList()
+                    : new List<string>();
+                var recommendations = parsed.TryGetProperty("recommendations", out var rec)
+                    ? rec.EnumerateArray().Select(x => x.GetString() ?? "").ToList()
+                    : new List<string>();
+
+                var attentionLevel = project.Risk switch
+                {
+                    RiskLevels.Critical => "critical",
+                    RiskLevels.High => "high",
+                    _ when response.DeviationPercent > 10 || response.IsOverdue => "medium",
+                    _ => "normal"
+                };
+
+                var confidence = Math.Clamp(
+                    65 + (response.DeviationPercent > 8 ? 10 : 0) + (project.Risk is RiskLevels.High or RiskLevels.Critical ? 10 : 0),
+                    60, 95);
+
+                return new AiInsightResponse(
+                    project.Id, attentionLevel, summary, riskExp, riskScore, riskPrediction, confidence,
+                    positives, concerns, recommendations);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"GEMINI INSIGHTS ERROR: {ex.Message}");
+        }
+
+        // Fallback nese Gemini deshton
+        return BuildAiInsightsFallback(project, response, weakest, strongest);
+    }
+
+    private static AiInsightResponse BuildAiInsightsFallback(
+        ProjectState project, ProjectResponse response,
+        KeyValuePair<string, int> weakest, KeyValuePair<string, int> strongest)
+    {
         var concerns = new List<string>();
         var positives = new List<string>();
         var recommendations = new List<string>();
+        var riskScore = CalculateRiskScore(project, response);
 
         if (response.DeviationPercent > 10)
         {
             concerns.Add($"Progresi aktual është {response.DeviationPercent}% poshtë ritmit të pritur.");
-            recommendations.Add("Riplanifiko fazat që kanë mbetur dhe vendos një pronar të qartë për rikuperimin.");
+            recommendations.Add("Riplanifiko fazat që kanë mbetur.");
         }
-
-        if (response.DelayDays > 0)
-        {
-            concerns.Add($"Projekti llogaritet me rreth {response.DelayDays} ditë vonesë.");
-            recommendations.Add("Vendos kontroll dyjavor deri sa devijimi të rikthehet nën 5%.");
-        }
-
         if (response.OkrAverage >= 80)
-        {
-            positives.Add($"OKR mesatar është {response.OkrAverage}% dhe tregon ekzekutim të qëndrueshëm.");
-        }
+            positives.Add($"OKR mesatar është {response.OkrAverage}% — ekzekutim i qëndrueshëm.");
 
         positives.Add($"Indikatori më i fortë është {strongest.Key} me {strongest.Value}%.");
-        concerns.Add($"Fusha që kërkon më shumë ndërhyrje është {weakest.Key} me {weakest.Value}%.");
-        recommendations.Add($"Forco planin e punës për {weakest.Key} në ciklin e ardhshëm dyjavor.");
+        concerns.Add($"Fusha që kërkon ndërhyrje: {weakest.Key} me {weakest.Value}%.");
+        recommendations.Add($"Forco planin për {weakest.Key} në ciklin e ardhshëm.");
 
         var attentionLevel = project.Risk switch
         {
@@ -973,15 +1165,40 @@ public sealed class InnovationDashboardStore
         };
 
         return new AiInsightResponse(
-            project.Id,
-            attentionLevel,
-            $"Projekti është në statusin {ProjectStatuses.ToLabel(project.Status)} me progres {project.Progress}% dhe OKR mesatar {response.OkrAverage}%. Fokusi kryesor duhet të jetë te {weakest.Key}.",
-            $"Risku {RiskLevels.ToLabel(project.Risk).ToLowerInvariant()} lidhet me devijimin aktual prej {response.DeviationPercent}% dhe me dobësinë kryesore te {weakest.Key}.",
-            Math.Clamp(65 + (response.DeviationPercent > 8 ? 10 : 0) + (project.Risk is RiskLevels.High or RiskLevels.Critical ? 10 : 0), 60, 95),
-            positives,
-            concerns.Distinct().ToList(),
-            recommendations.Distinct().ToList());
+            project.Id, attentionLevel,
+            $"Projekti në statusin {ProjectStatuses.ToLabel(project.Status)} me progres {project.Progress}% dhe OKR {response.OkrAverage}%.",
+            $"Risku {RiskLevels.ToLabel(project.Risk).ToLowerInvariant()} lidhet me devijimin prej {response.DeviationPercent}%.",
+            riskScore,
+            BuildRiskPrediction(riskScore),
+            Math.Clamp(65 + (response.DeviationPercent > 8 ? 10 : 0), 60, 95),
+            positives, concerns.Distinct().ToList(), recommendations.Distinct().ToList());
     }
+
+    private static int CalculateRiskScore(ProjectState project, ProjectResponse response)
+    {
+        var riskBase = project.Risk switch
+        {
+            RiskLevels.Critical => 75,
+            RiskLevels.High => 55,
+            RiskLevels.Medium => 30,
+            _ => 8
+        };
+        var okrPenalty = Math.Max(0, 100 - response.OkrAverage) * 0.35;
+        var progressPenalty = Math.Max(0, response.ExpectedProgress - project.Progress) * 0.45;
+        var delayPenalty = Math.Min(20, Math.Max(0, response.DelayDays) * 0.8);
+        var deadlinePenalty = response.DaysRemaining <= 30 && project.Progress < 90 ? 10 : 0;
+
+        return Math.Clamp((int)Math.Round(riskBase + okrPenalty + progressPenalty + delayPenalty + deadlinePenalty), 0, 100);
+    }
+
+    private static string BuildRiskPrediction(int riskScore) =>
+        riskScore switch
+        {
+            <= 20 => "Modeli sugjeron vazhdimësi normale me monitorim standard.",
+            <= 45 => "Modeli sugjeron monitorim të rregullt dhe kontroll të ritmit të progresit.",
+            <= 70 => "Modeli sugjeron vëmendje të shtuar dhe plan rikuperimi për faktorët më të dobët.",
+            _ => "Modeli sugjeron ndërhyrje prioritare dhe eskalim drejtues për uljen e riskut."
+        };
 
     private static PortfolioMetricsResponse BuildPortfolioMetrics(IReadOnlyCollection<ProjectState> projects)
     {

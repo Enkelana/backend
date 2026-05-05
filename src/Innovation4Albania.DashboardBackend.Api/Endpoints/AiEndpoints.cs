@@ -7,11 +7,15 @@ public static class AiEndpoints
 {
     public static RouteGroupBuilder MapAiEndpoints(this RouteGroupBuilder api)
     {
-        api.MapPost("/ai/chat", (string role, string? ministry, AiChatRequest request, IUserContextService contextService, IAiService service) =>
+        api.MapPost("/ai/chat", async (string role, string? ministry, AiChatRequest request,
+            IUserContextService contextService, IAiService service, IConfiguration configuration) =>
         {
-            return EndpointContextResolver.TryResolve(role, ministry, contextService, out var context, out var errorResult)
-                ? Results.Ok(service.GetChatReply(context, request))
-                : errorResult!;
+            if (!EndpointContextResolver.TryResolve(role, ministry, contextService, out var context, out var errorResult))
+                return errorResult!;
+
+            var apiKey = configuration["Gemini:ApiKey"] ?? string.Empty;
+            var result = await service.GetChatReply(context, request, apiKey);
+            return Results.Ok(result);
         });
 
         return api;

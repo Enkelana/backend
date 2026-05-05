@@ -66,16 +66,16 @@ public static class ProjectEndpoints
             return Results.Ok(service.GetProjectEvents(id, context));
         });
 
-        api.MapGet("/projects/{id}/ai-insights", (string id, string role, string? ministry, IUserContextService contextService, IProjectService service) =>
+        api.MapGet("/projects/{id}/ai-insights", async (string id, string role, string? ministry,
+            IUserContextService contextService, IProjectService service, IConfiguration configuration) =>
         {
             if (!EndpointContextResolver.TryResolve(role, ministry, contextService, out var context, out var errorResult))
-            {
                 return errorResult!;
-            }
 
-            var insights = service.GetProjectAiInsights(id, context);
+            var apiKey = configuration["Gemini:ApiKey"] ?? string.Empty;
+            var insights = await service.GetProjectAiInsights(id, context, apiKey);
             return insights is null
-                ? Results.NotFound(new ApiErrorResponse("not_found", "Projekti nuk u gjet ose nuk është i aksesueshëm për këtë përdorues."))
+                ? Results.NotFound(new ApiErrorResponse("not_found", "Projekti nuk u gjet."))
                 : Results.Ok(insights);
         });
 

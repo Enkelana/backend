@@ -4,5 +4,5 @@ namespace Innovation4Albania.DashboardBackend.Api.Services.Interfaces;
 
 public interface IAiService
 {
-    AiChatResponse GetChatReply(UserContext context, AiChatRequest request);
+    Task<AiChatResponse> GetChatReply(UserContext context, AiChatRequest request, string apiKey);
 }
