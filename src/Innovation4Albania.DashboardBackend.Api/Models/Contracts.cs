@@ -161,6 +161,16 @@ public sealed record CalendarMonthResponse(
     DateOnly GridEnd,
     IReadOnlyList<CalendarDayResponse> Days);
 
+public sealed record UpcomingEventResponse(
+    string Id,
+    string ProjectId,
+    DateTimeOffset Date,
+    string Type,
+    string TypeLabel,
+    string Title,
+    string ProjectCode,
+    string ProjectName);
+
 public sealed record AiInsightResponse(
     string ProjectId,
     string AttentionLevel,

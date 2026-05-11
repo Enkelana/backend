@@ -34,7 +34,7 @@ public sealed class InnovationDashboardRepository(InnovationDashboardStore store
     public IReadOnlyList<ProjectChangeProposalResponse> GetChangeProposals(UserContext context, string? projectId) => store.GetChangeProposals(context, projectId);
     public bool TryCreateChangeProposal(UserContext context, CreateProjectChangeProposalRequest request, out ProjectChangeProposalResponse? response, out string? error) => store.TryCreateChangeProposal(context, request, out response, out error);
     public CalendarMonthResponse GetCalendarMonth(UserContext context, DateOnly month) => store.GetCalendarMonth(context, month);
-    public IReadOnlyList<object> GetUpcomingEvents(UserContext context, int limit) => store.GetUpcomingEvents(context, limit);
+    public IReadOnlyList<UpcomingEventResponse> GetUpcomingEvents(UserContext context, int limit) => store.GetUpcomingEvents(context, limit);
     public Task<AiChatResponse> GetAiChatReply(UserContext context, AiChatRequest request, string apiKey)
         => store.GetAiChatReply(context, request, apiKey);
 }

@@ -5,5 +5,5 @@ namespace Innovation4Albania.DashboardBackend.Api.Services.Interfaces;
 public interface ICalendarService
 {
     CalendarMonthResponse GetCalendarMonth(UserContext context, DateOnly month);
-    IReadOnlyList<object> GetUpcomingEvents(UserContext context, int limit);
+    IReadOnlyList<UpcomingEventResponse> GetUpcomingEvents(UserContext context, int limit);
 }

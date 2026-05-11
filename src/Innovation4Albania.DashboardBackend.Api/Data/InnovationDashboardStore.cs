@@ -683,7 +683,7 @@ public sealed class InnovationDashboardStore
         return new CalendarMonthResponse(monthStart, gridStart, gridEnd, days);
     }
 
-    public IReadOnlyList<object> GetUpcomingEvents(UserContext context, int limit)
+    public IReadOnlyList<UpcomingEventResponse> GetUpcomingEvents(UserContext context, int limit)
     {
         var today = DateOnly.FromDateTime(DateTime.Today);
         return GetVisibleProjects(context)
@@ -694,17 +694,15 @@ public sealed class InnovationDashboardStore
             .Select(item =>
             {
                 var project = _projects.First(projectState => projectState.Id == item.ProjectId);
-                return (object)new
-                {
+                return new UpcomingEventResponse(
                     item.Id,
                     item.ProjectId,
                     item.Date,
                     item.Type,
-                    typeLabel = EventTypes.ToLabel(item.Type),
+                    EventTypes.ToLabel(item.Type),
                     item.Title,
-                    projectCode = project.Code,
-                    projectName = project.Name
-                };
+                    project.Code,
+                    project.Name);
             })
             .ToList();
     }

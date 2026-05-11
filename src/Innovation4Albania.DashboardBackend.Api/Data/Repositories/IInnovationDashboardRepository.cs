@@ -29,6 +29,6 @@ public interface IInnovationDashboardRepository
     IReadOnlyList<ProjectChangeProposalResponse> GetChangeProposals(UserContext context, string? projectId);
     bool TryCreateChangeProposal(UserContext context, CreateProjectChangeProposalRequest request, out ProjectChangeProposalResponse? response, out string? error);
     CalendarMonthResponse GetCalendarMonth(UserContext context, DateOnly month);
-    IReadOnlyList<object> GetUpcomingEvents(UserContext context, int limit);
+    IReadOnlyList<UpcomingEventResponse> GetUpcomingEvents(UserContext context, int limit);
     Task<AiChatResponse> GetAiChatReply(UserContext context, AiChatRequest request, string apiKey);
 }
