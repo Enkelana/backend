@@ -300,6 +300,8 @@ public sealed record CreateProjectChangeProposalRequest(
     string ProposedValue,
     string Reason);
 
+public sealed record ResolveChangeProposalRequest(string Action);
+
 public sealed record AiChatRequest(string Message);
 
 public sealed record ApiErrorResponse(string Code, string Message);

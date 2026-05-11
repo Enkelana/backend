@@ -10,4 +10,5 @@ public sealed class UpdateService(IInnovationDashboardRepository repository) : I
     public bool TryCreateWeeklyUpdate(UserContext context, CreateWeeklyUpdateRequest request, out WeeklyUpdateResponse? response, out string? error) => repository.TryCreateWeeklyUpdate(context, request, out response, out error);
     public IReadOnlyList<ProjectChangeProposalResponse> GetChangeProposals(UserContext context, string? projectId) => repository.GetChangeProposals(context, projectId);
     public bool TryCreateChangeProposal(UserContext context, CreateProjectChangeProposalRequest request, out ProjectChangeProposalResponse? response, out string? error) => repository.TryCreateChangeProposal(context, request, out response, out error);
+    public bool TryResolveChangeProposal(UserContext context, string id, string action, out ProjectChangeProposalResponse? response, out string? error) => repository.TryResolveChangeProposal(context, id, action, out response, out error);
 }

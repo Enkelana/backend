@@ -645,6 +645,63 @@ public sealed class InnovationDashboardStore
         return true;
     }
 
+    public bool TryResolveChangeProposal(UserContext context, string id, string action, out ProjectChangeProposalResponse? response, out string? error)
+    {
+        response = null;
+
+        if (!ApplicationRoles.CanManagePortfolio(context.Role))
+        {
+            error = "Vetëm Drejtori i Agjencisë dhe Drejtori i Inovacionit Publik mund të shqyrtojnë propozime.";
+            return false;
+        }
+
+        var proposal = _changeProposals.FirstOrDefault(item => string.Equals(item.Id, id, StringComparison.OrdinalIgnoreCase));
+        if (proposal is null)
+        {
+            error = "Propozimi nuk u gjet.";
+            return false;
+        }
+
+        var visibleProjectIds = GetVisibleProjects(context).Select(project => project.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (!visibleProjectIds.Contains(proposal.ProjectId))
+        {
+            error = "Nuk keni akses te ky propozim.";
+            return false;
+        }
+
+        if (!string.Equals(proposal.Status, "Në shqyrtim", StringComparison.OrdinalIgnoreCase))
+        {
+            error = "Ky propozim është zgjidhur tashmë.";
+            return false;
+        }
+
+        var normalizedAction = action.Trim().ToLowerInvariant();
+        if (normalizedAction is "approve" or "approved" or "mirato")
+        {
+            var project = _projects.First(item => item.Id == proposal.ProjectId);
+            if (!TryApplyApprovedChangeProposal(project, proposal, out error))
+            {
+                return false;
+            }
+
+            project.LastUpdated = DateTimeOffset.UtcNow;
+            proposal.Status = "Miratuar";
+        }
+        else if (normalizedAction is "reject" or "rejected" or "refuzo")
+        {
+            proposal.Status = "Refuzuar";
+        }
+        else
+        {
+            error = "Veprimi duhet të jetë approve ose reject.";
+            return false;
+        }
+
+        response = ToChangeProposalResponse(proposal);
+        error = null;
+        return true;
+    }
+
     public CalendarMonthResponse GetCalendarMonth(UserContext context, DateOnly month)
     {
         var events = GetVisibleProjects(context)
@@ -979,6 +1036,46 @@ public sealed class InnovationDashboardStore
             WorkgroupRoles.ToLabel(member.Role),
             member.Unit,
             member.AllocationPercent);
+
+    private static bool TryApplyApprovedChangeProposal(ProjectState project, ProjectChangeProposalState proposal, out string? error)
+    {
+        if (proposal.Type == "deadline")
+        {
+            if (!DateOnly.TryParse(proposal.ProposedValue, out var proposedDate) &&
+                !DateOnly.TryParseExact(proposal.ProposedValue, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out proposedDate))
+            {
+                error = "Data e propozuar nuk është e vlefshme.";
+                return false;
+            }
+
+            var nextEndDate = new DateTimeOffset(proposedDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+            if (nextEndDate < project.StartDate)
+            {
+                error = "Afati i ri nuk mund të jetë përpara datës së nisjes.";
+                return false;
+            }
+
+            project.EndDate = nextEndDate;
+            error = null;
+            return true;
+        }
+
+        if (proposal.Type == "content")
+        {
+            if (string.IsNullOrWhiteSpace(proposal.ProposedValue))
+            {
+                error = "Përmbajtja e propozuar nuk mund të jetë bosh.";
+                return false;
+            }
+
+            project.Description = proposal.ProposedValue.Trim();
+            error = null;
+            return true;
+        }
+
+        error = "Tipi i propozimit nuk mbështetet.";
+        return false;
+    }
 
     private ProjectChangeProposalResponse ToChangeProposalResponse(ProjectChangeProposalState proposal)
     {
@@ -1497,7 +1594,7 @@ public sealed class InnovationDashboardStore
         string Blockers,
         string Comments);
 
-    private sealed record ProjectChangeProposalState(
+    private sealed class ProjectChangeProposalState(
         string Id,
         string ProjectId,
         string SubmittedBy,
@@ -1507,7 +1604,19 @@ public sealed class InnovationDashboardStore
         string CurrentValue,
         string ProposedValue,
         string Reason,
-        string Status);
+        string Status)
+    {
+        public string Id { get; } = Id;
+        public string ProjectId { get; } = ProjectId;
+        public string SubmittedBy { get; } = SubmittedBy;
+        public string SubmittedRole { get; } = SubmittedRole;
+        public DateTimeOffset SubmittedAt { get; } = SubmittedAt;
+        public string Type { get; } = Type;
+        public string CurrentValue { get; } = CurrentValue;
+        public string ProposedValue { get; } = ProposedValue;
+        public string Reason { get; } = Reason;
+        public string Status { get; set; } = Status;
+    }
 }
 
 internal static class ObjectPipeExtensions

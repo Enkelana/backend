@@ -1,3 +1,4 @@
+using Innovation4Albania.DashboardBackend.Api.Constants;
 using Innovation4Albania.DashboardBackend.Api.Models;
 using Innovation4Albania.DashboardBackend.Api.Services.Interfaces;
 
@@ -43,6 +44,23 @@ public static class UpdateEndpoints
             return service.TryCreateChangeProposal(context, request, out var proposal, out var error)
                 ? Results.Ok(proposal)
                 : Results.BadRequest(new ApiErrorResponse("change_proposal_failed", error!));
+        });
+
+        api.MapPatch("/change-proposals/{id}", (string id, string role, string? ministry, ResolveChangeProposalRequest request, IUserContextService contextService, IUpdateService service) =>
+        {
+            if (!EndpointContextResolver.TryResolve(role, ministry, contextService, out var context, out var errorResult))
+            {
+                return errorResult!;
+            }
+
+            if (!ApplicationRoles.CanManagePortfolio(context.Role))
+            {
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+            }
+
+            return service.TryResolveChangeProposal(context, id, request.Action, out var proposal, out var error)
+                ? Results.Ok(proposal)
+                : Results.BadRequest(new ApiErrorResponse("change_proposal_resolution_failed", error!));
         });
 
         return api;
