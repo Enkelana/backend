@@ -1372,7 +1372,7 @@ public sealed class InnovationDashboardStore
     private static IReadOnlyList<ProjectEventResponse> BuildProjectEvents(ProjectState project) =>
     [
         new($"start-{project.Id}", project.Id, project.StartDate, EventTypes.Kickoff, "Nisja e projektit"),
-        new($"end-{project.Id}", project.Id, project.EndDate, EventTypes.Completion, "Mbyllja e projektit")
+        new($"end-{project.Id}", project.Id, project.EndDate, EventTypes.Completion, "Përfundimi i projektit")
     ];
 
     private static DateOnly StartOfWeek(DateOnly value)

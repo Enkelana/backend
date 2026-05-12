@@ -8,7 +8,7 @@ public static class EventTypes
     public static string ToLabel(string value) => value switch
     {
         Kickoff => "Nisja e projektit",
-        Completion => "Mbyllja e projektit",
+        Completion => "Përfundimi i projektit",
         _ => value
     };
 }
