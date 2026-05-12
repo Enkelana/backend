@@ -25,10 +25,8 @@ public sealed record ProjectOkr(
     int Deadlines,
     int Quality,
     int Impact,
-    int Collaboration,
     int Dynamics,
-    int Capacity,
-    int Rhythm);
+    int Capacity);
 
 public sealed record KeyResultResponse(
     string Id,

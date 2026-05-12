@@ -1134,10 +1134,8 @@ public sealed class InnovationDashboardStore
             ["afatet"] = project.Okr.Deadlines,
             ["cilësia"] = project.Okr.Quality,
             ["impakti"] = project.Okr.Impact,
-            ["bashkëpunimi"] = project.Okr.Collaboration,
             ["dinamika"] = project.Okr.Dynamics,
             ["kapaciteti"] = project.Okr.Capacity,
-            ["ritmi"] = project.Okr.Rhythm
         }.OrderBy(item => item.Value).First();
 
         var strongest = new Dictionary<string, int>
@@ -1145,10 +1143,8 @@ public sealed class InnovationDashboardStore
             ["afatet"] = project.Okr.Deadlines,
             ["cilësia"] = project.Okr.Quality,
             ["impakti"] = project.Okr.Impact,
-            ["bashkëpunimi"] = project.Okr.Collaboration,
             ["dinamika"] = project.Okr.Dynamics,
             ["kapaciteti"] = project.Okr.Capacity,
-            ["ritmi"] = project.Okr.Rhythm
         }.OrderByDescending(item => item.Value).First();
 
         var jsonStructure = "{\"summary\":\"max 1 fjali\",\"riskExplanation\":\"max 1 fjali\",\"riskScore\":0-100,\"riskPrediction\":\"max 1 fjali\",\"positives\":[\"1 fjali\",\"1 fjali\"],\"concerns\":[\"1 fjali\"],\"recommendations\":[\"1 fjali\",\"1 fjali\"]}";
@@ -1172,10 +1168,8 @@ public sealed class InnovationDashboardStore
              $"- Afatet OKR: {project.Okr.Deadlines}%\n" +
              $"- Cilësia OKR: {project.Okr.Quality}%\n" +
              $"- Impakti OKR: {project.Okr.Impact}%\n" +
-             $"- Bashkëpunimi OKR: {project.Okr.Collaboration}%\n" +
              $"- Dinamika OKR: {project.Okr.Dynamics}%\n" +
              $"- Kapaciteti OKR: {project.Okr.Capacity}%\n" +
-             $"- Ritmi OKR: {project.Okr.Rhythm}%\n" +
              $"- Ditë të mbetura: {response.DaysRemaining}\n" +
              $"- Vonesa (ditë): {response.DelayDays}\n" +
              $"- Fusha më e dobët: {weakest.Key} ({weakest.Value}%)\n" +
@@ -1423,7 +1417,7 @@ public sealed class InnovationDashboardStore
             IsoOffset(-220),
             IsoOffset(140),
             70,
-            new ProjectOkr(80, 75, 70, 95, 78, 72, 84),
+            new ProjectOkr(80, 75, 70, 78, 72),
             RiskLevels.Medium,
             ["Erblin Malkurti", "Evilsidio Tosku", "Nensi Ahmetbeja", "Ina Peleshka"],
             [
@@ -1570,10 +1564,8 @@ public sealed class InnovationDashboardStore
         var deadlineScore = Math.Clamp(progress + 18, 35, 95);
         var qualityScore = Math.Clamp(progress + 28, 45, 96);
         var impactScore = Math.Clamp(progress + 24, 45, 97);
-        var collaborationScore = Math.Clamp(progress + 20, 40, 94);
         var dynamicsScore = Math.Clamp(progress + 16, 38, 95);
         var capacityScore = Math.Clamp(progress + 14, 36, 94);
-        var rhythmScore = Math.Clamp(progress + 22, 40, 96);
         var priority = (projectNumber % 4) switch
         {
             0 => ProjectPriorities.Critical,
@@ -1612,7 +1604,7 @@ public sealed class InnovationDashboardStore
             IsoOffset(-90 - (projectNumber * 12)),
             IsoOffset(status == ProjectStatuses.Completed ? -15 : 120 + (projectNumber * 20)),
             progress,
-            new ProjectOkr(deadlineScore, qualityScore, impactScore, collaborationScore, dynamicsScore, capacityScore, rhythmScore),
+            new ProjectOkr(deadlineScore, qualityScore, impactScore, dynamicsScore, capacityScore),
             risk,
             members.Select(member => member.Name).ToList(),
             members,
@@ -1638,9 +1630,9 @@ public sealed class InnovationDashboardStore
 
     private List<WeeklyUpdateState> BuildUpdates() =>
     [
-        new("upd-1", "p1", "Drejtori i Inovacionit", ApplicationRoles.DrejtorAgjencie, IsoOffset(-2), 70, ProjectStatuses.Active, new ProjectOkr(80, 75, 70, 95, 78, 72, 84), RiskLevels.Medium, "Koordinimi me dy ministritë kërkon sinkronizim më të shpeshtë.", "Faza 7 po ecën sipas planit, por duhen finalizuar vendimet e ndërmjetme."),
-        new("upd-2", "p3", "Ekspert Agjencie", ApplicationRoles.StafAgjencie, IsoOffset(-6), 33, ProjectStatuses.Active, new ProjectOkr(45, 70, 80, 60, 52, 48, 57), RiskLevels.High, "Ka vonesë në miratimin e dokumenteve përgatitore.", "Duhet ndjekje e përditshme me njësinë përkatëse."),
-        new("upd-3", "p5", "Ekspert Agjencie", ApplicationRoles.StafAgjencie, IsoOffset(-8), 41, ProjectStatuses.Blocked, new ProjectOkr(56, 60, 64, 58, 54, 50, 59), RiskLevels.High, "Bllokim në furnizim dhe mungesë aprovimesh.", "Kërkohet vendim drejtues për të zhbllokuar varësitë.")
+        new("upd-1", "p1", "Drejtori i Inovacionit", ApplicationRoles.DrejtorAgjencie, IsoOffset(-2), 70, ProjectStatuses.Active, new ProjectOkr(80, 75, 70, 78, 72), RiskLevels.Medium, "Koordinimi me dy ministritë kërkon sinkronizim më të shpeshtë.", "Faza 7 po ecën sipas planit, por duhen finalizuar vendimet e ndërmjetme."),
+        new("upd-2", "p3", "Ekspert Agjencie", ApplicationRoles.StafAgjencie, IsoOffset(-6), 33, ProjectStatuses.Active, new ProjectOkr(45, 70, 80, 52, 48), RiskLevels.High, "Ka vonesë në miratimin e dokumenteve përgatitore.", "Duhet ndjekje e përditshme me njësinë përkatëse."),
+        new("upd-3", "p5", "Ekspert Agjencie", ApplicationRoles.StafAgjencie, IsoOffset(-8), 41, ProjectStatuses.Blocked, new ProjectOkr(56, 60, 64, 54, 50), RiskLevels.High, "Bllokim në furnizim dhe mungesë aprovimesh.", "Kërkohet vendim drejtues për të zhbllokuar varësitë.")
     ];
 
     private static List<ObjectiveState> BuildSampleObjectives(string prefix, string title) =>
