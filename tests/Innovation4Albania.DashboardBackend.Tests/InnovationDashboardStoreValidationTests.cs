@@ -76,6 +76,21 @@ public sealed class InnovationDashboardStoreValidationTests
         Assert.Null(error);
     }
 
+    [Fact]
+    public void Login_CanonicalizesMinistryWithReplacementCharacters()
+    {
+        var store = StoreTestHelpers.CreateStore();
+        var brokenMinistry = "Ministria e Infrastruktur\uFFFDs dhe Energjis\uFFFD";
+        var request = new LoginRequest(ApplicationRoles.StafMinistrie, brokenMinistry, "Staf Ministrie");
+
+        var isValid = store.IsValidContext(UserContext.From(request.Role, request.Ministry), out var error);
+        var user = store.Login(request);
+
+        Assert.True(isValid);
+        Assert.Null(error);
+        Assert.Equal("Ministria e Infrastrukturës dhe Energjisë", user.Ministry);
+    }
+
     private static (bool IsValid, string? Error) InvokeTryValidateProjectRequest(CreateProjectRequest request)
     {
         var method = typeof(InnovationDashboardStore).GetMethod("TryValidateProjectRequest", BindingFlags.NonPublic | BindingFlags.Static)
