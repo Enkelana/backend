@@ -19,7 +19,13 @@ public sealed class AuthService(IInnovationDashboardRepository repository, IConf
             return "Ky rol ka akses vetëm me link view.";
         }
 
-        return repository.ValidateLogin(request);
+        var validationError = repository.ValidateLogin(request);
+        if (validationError is not null)
+        {
+            return validationError;
+        }
+
+        return ValidateCredentials(context.Role, request.Username, request.Password);
     }
 
     public string? ValidateViewLink(LoginRequest request)
@@ -28,6 +34,11 @@ public sealed class AuthService(IInnovationDashboardRepository repository, IConf
         if (!ApplicationRoles.IsViewOnlyRole(context.Role))
         {
             return "Ky rol duhet të përdorë login.";
+        }
+
+        if (context.Role == ApplicationRoles.StafMinistrie && string.IsNullOrWhiteSpace(context.Ministry))
+        {
+            return null;
         }
 
         return repository.ValidateLogin(request);
@@ -84,5 +95,25 @@ public sealed class AuthService(IInnovationDashboardRepository repository, IConf
         }
 
         return new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key));
+    }
+
+    private string? ValidateCredentials(string role, string? username, string? password)
+    {
+        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
+        {
+            return "Username dhe password janë të detyrueshme.";
+        }
+
+        var configuredUsername = configuration[$"Auth:Users:{role}:Username"];
+        var configuredPassword = configuration[$"Auth:Users:{role}:Password"];
+        if (string.IsNullOrWhiteSpace(configuredUsername) || string.IsNullOrWhiteSpace(configuredPassword))
+        {
+            return "Kredencialet për këtë rol nuk janë konfiguruar.";
+        }
+
+        return string.Equals(username.Trim(), configuredUsername, StringComparison.Ordinal) &&
+               string.Equals(password, configuredPassword, StringComparison.Ordinal)
+            ? null
+            : "Username ose password nuk është i saktë.";
     }
 }

@@ -912,7 +912,7 @@ public sealed class InnovationDashboardStore
 
     private IReadOnlyList<ProjectState> GetVisibleProjects(UserContext context)
     {
-        if (context.Role != ApplicationRoles.StafMinistrie)
+        if (context.Role != ApplicationRoles.StafMinistrie || string.IsNullOrWhiteSpace(context.Ministry))
         {
             return _projects;
         }

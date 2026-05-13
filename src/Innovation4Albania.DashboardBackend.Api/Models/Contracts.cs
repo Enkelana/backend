@@ -1,6 +1,6 @@
 ﻿namespace Innovation4Albania.DashboardBackend.Api.Models;
 
-public sealed record LoginRequest(string Role, string? Ministry, string? Name);
+public sealed record LoginRequest(string Role, string? Ministry, string? Name, string? Username = null, string? Password = null);
 
 public sealed record UserContext(string Role, string? Ministry)
 {
