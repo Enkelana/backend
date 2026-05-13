@@ -1,4 +1,5 @@
 using Innovation4Albania.DashboardBackend.Api.Data.Repositories;
+using Innovation4Albania.DashboardBackend.Api.Constants;
 using Innovation4Albania.DashboardBackend.Api.Models;
 using Innovation4Albania.DashboardBackend.Api.Services.Interfaces;
 using System.IdentityModel.Tokens.Jwt;
@@ -10,9 +11,35 @@ namespace Innovation4Albania.DashboardBackend.Api.Services;
 
 public sealed class AuthService(IInnovationDashboardRepository repository, IConfiguration configuration) : IAuthService
 {
-    public string? ValidateLogin(LoginRequest request) => repository.ValidateLogin(request);
+    public string? ValidateLogin(LoginRequest request)
+    {
+        var context = UserContext.From(request.Role, request.Ministry);
+        if (!ApplicationRoles.CanUseInteractiveLogin(context.Role))
+        {
+            return "Ky rol ka akses vetëm me link view.";
+        }
+
+        return repository.ValidateLogin(request);
+    }
+
+    public string? ValidateViewLink(LoginRequest request)
+    {
+        var context = UserContext.From(request.Role, request.Ministry);
+        if (!ApplicationRoles.IsViewOnlyRole(context.Role))
+        {
+            return "Ky rol duhet të përdorë login.";
+        }
+
+        return repository.ValidateLogin(request);
+    }
 
     public AuthResponse Login(LoginRequest request)
+    {
+        var user = repository.Login(request);
+        return new AuthResponse(CreateToken(user), user);
+    }
+
+    public AuthResponse CreateViewLinkSession(LoginRequest request)
     {
         var user = repository.Login(request);
         return new AuthResponse(CreateToken(user), user);

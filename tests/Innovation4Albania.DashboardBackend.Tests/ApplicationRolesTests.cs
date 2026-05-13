@@ -31,4 +31,26 @@ public sealed class ApplicationRolesTests
     {
         Assert.Equal(expected, ApplicationRoles.CanProposeProjectChanges(role));
     }
+
+    [Theory]
+    [InlineData(ApplicationRoles.Kryeminister, true)]
+    [InlineData(ApplicationRoles.Minister, true)]
+    [InlineData(ApplicationRoles.StafMinistrie, true)]
+    [InlineData(ApplicationRoles.DrejtorAgjencie, false)]
+    [InlineData(ApplicationRoles.StafAgjencie, false)]
+    public void IsViewOnlyRole_OnlyExecutiveAndMinistryViewerRolesUseViewLinks(string role, bool expected)
+    {
+        Assert.Equal(expected, ApplicationRoles.IsViewOnlyRole(role));
+    }
+
+    [Theory]
+    [InlineData(ApplicationRoles.DrejtorAgjencie, true)]
+    [InlineData(ApplicationRoles.DrejtorInovacioniPublik, true)]
+    [InlineData(ApplicationRoles.StafAgjencie, true)]
+    [InlineData(ApplicationRoles.Kryeminister, false)]
+    [InlineData(ApplicationRoles.StafMinistrie, false)]
+    public void CanUseInteractiveLogin_OnlyAgencyRolesCanLogin(string role, bool expected)
+    {
+        Assert.Equal(expected, ApplicationRoles.CanUseInteractiveLogin(role));
+    }
 }

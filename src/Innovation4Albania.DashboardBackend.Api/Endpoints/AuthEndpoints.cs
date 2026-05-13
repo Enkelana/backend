@@ -18,6 +18,17 @@ public static class AuthEndpoints
             return Results.Ok(service.Login(request));
         });
 
+        api.MapPost("/auth/view-link", (LoginRequest request, IAuthService service) =>
+        {
+            var validationError = service.ValidateViewLink(request);
+            if (validationError is not null)
+            {
+                return Results.BadRequest(new ApiErrorResponse("validation_error", validationError));
+            }
+
+            return Results.Ok(service.CreateViewLinkSession(request));
+        });
+
         return api;
     }
 }
