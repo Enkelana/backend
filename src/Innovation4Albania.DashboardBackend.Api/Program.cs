@@ -30,6 +30,7 @@ builder.Services
     });
 
 builder.Services.AddAuthorization();
+builder.Services.AddOpenApi();
 
 builder.Services
     .AddApiJsonConfiguration()
@@ -37,6 +38,11 @@ builder.Services
     .AddApplicationServices();
 
 var app = builder.Build();
+
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi();
+}
 
 app.UseMiddleware<JsonCharsetMiddleware>();
 app.UseMiddleware<ErrorHandlingMiddleware>();
