@@ -15,7 +15,7 @@ public sealed class ErrorHandlingMiddleware(RequestDelegate next, ILogger<ErrorH
             logger.LogError(ex, "Gabim i papritur gjatë përpunimit të kërkesës.");
 
             context.Response.StatusCode = StatusCodes.Status500InternalServerError;
-            context.Response.ContentType = "application/json";
+            context.Response.ContentType = "application/json; charset=utf-8";
 
             await context.Response.WriteAsJsonAsync(new ApiErrorResponse(
                 "internal_server_error",

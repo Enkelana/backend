@@ -38,6 +38,7 @@ builder.Services
 
 var app = builder.Build();
 
+app.UseMiddleware<JsonCharsetMiddleware>();
 app.UseMiddleware<ErrorHandlingMiddleware>();
 app.UseCors();
 app.UseAuthentication();
