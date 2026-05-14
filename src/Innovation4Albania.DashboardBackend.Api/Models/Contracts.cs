@@ -285,6 +285,7 @@ public sealed record CreatePortfolioObjectiveRequest(
 
 public sealed record CreateWeeklyUpdateRequest(
     string ProjectId,
+    string? ExpertName,
     int Progress,
     string Status,
     string Risk,

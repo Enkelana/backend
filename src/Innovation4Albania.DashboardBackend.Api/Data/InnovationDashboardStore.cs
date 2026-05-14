@@ -764,10 +764,14 @@ public sealed class InnovationDashboardStore
             return false;
         }
 
+        var expertName = string.IsNullOrWhiteSpace(request.ExpertName)
+            ? ApplicationRoles.ToDisplayLabel(context.Role)
+            : request.ExpertName.Trim();
+
         var update = new WeeklyUpdateState(
             $"upd-{_updates.Count + 1}",
             request.ProjectId,
-            ApplicationRoles.ToDisplayLabel(context.Role),
+            expertName,
             context.Role,
             DateTimeOffset.UtcNow,
             request.Progress,
