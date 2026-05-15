@@ -1220,11 +1220,7 @@ public sealed class InnovationDashboardStore
     private int GetOkrAverage(ProjectState project) => CalculateOkrAverage(CalculateOkr(project));
 
     private static int CalculateOkrAverage(ProjectOkr okr) =>
-        ClampPercent((okr.Deadlines * 0.25)
-            + (okr.Quality * 0.25)
-            + (okr.Impact * 0.25)
-            + (okr.Dynamics * 0.15)
-            + (okr.Capacity * 0.10));
+        ClampPercent((okr.Deadlines + okr.Quality + okr.Impact + okr.Dynamics) / 4d);
 
     private ProjectOkr CalculateOkr(ProjectState project)
     {
@@ -1237,16 +1233,12 @@ public sealed class InnovationDashboardStore
         var quality = CalculateQualityOkr(projectUpdates);
         var impact = CalculateImpactOkr(project);
         var dynamics = CalculateDynamicsOkr(project, projectUpdates);
-        var capacity = project.TeamMembers.Count == 0
-            ? 50
-            : ClampPercent(project.TeamMembers.Average(member => member.AllocationPercent));
 
         return new ProjectOkr(
             ClampPercent(deadline),
             ClampPercent(quality),
             ClampPercent(impact),
-            ClampPercent(dynamics),
-            ClampPercent(capacity));
+            ClampPercent(dynamics));
     }
 
     private static int CalculateDeadlineOkr(ProjectState project)
@@ -1320,7 +1312,7 @@ public sealed class InnovationDashboardStore
         return ClampPercent(updatesOnTime * 100d / updates.Count);
     }
 
-    private static ProjectOkr NeutralOkr() => new(50, 50, 50, 50, 50);
+    private static ProjectOkr NeutralOkr() => new(50, 50, 50, 50);
 
     private static int ClampPercent(double value) => (int)Math.Round(Math.Clamp(value, 0, 100));
 
@@ -1583,7 +1575,6 @@ public sealed class InnovationDashboardStore
             ["cilësia"] = response.Okr.Quality,
             ["impakti"] = response.Okr.Impact,
             ["dinamika"] = response.Okr.Dynamics,
-            ["kapaciteti"] = response.Okr.Capacity,
         }.OrderBy(item => item.Value).First();
 
         var strongest = new Dictionary<string, int>
@@ -1592,7 +1583,6 @@ public sealed class InnovationDashboardStore
             ["cilësia"] = response.Okr.Quality,
             ["impakti"] = response.Okr.Impact,
             ["dinamika"] = response.Okr.Dynamics,
-            ["kapaciteti"] = response.Okr.Capacity,
         }.OrderByDescending(item => item.Value).First();
 
         var jsonStructure = "{\"summary\":\"max 1 fjali\",\"riskExplanation\":\"max 1 fjali\",\"riskScore\":0-100,\"riskPrediction\":\"max 1 fjali\",\"positives\":[\"1 fjali\",\"1 fjali\"],\"concerns\":[\"1 fjali\"],\"recommendations\":[\"1 fjali\",\"1 fjali\"]}";
@@ -1617,7 +1607,6 @@ public sealed class InnovationDashboardStore
              $"- Cilësia OKR: {response.Okr.Quality}%\n" +
              $"- Impakti OKR: {response.Okr.Impact}%\n" +
              $"- Dinamika OKR: {response.Okr.Dynamics}%\n" +
-             $"- Kapaciteti OKR: {response.Okr.Capacity}%\n" +
              $"- Ditë të mbetura: {response.DaysRemaining}\n" +
              $"- Vonesa (ditë): {response.DelayDays}\n" +
              $"- Fusha më e dobët: {weakest.Key} ({weakest.Value}%)\n" +
@@ -1865,7 +1854,7 @@ public sealed class InnovationDashboardStore
             IsoOffset(-220),
             IsoOffset(140),
             70,
-            new ProjectOkr(80, 75, 70, 78, 72),
+            new ProjectOkr(80, 75, 70, 78),
             RiskLevels.Medium,
             ["Erblin Malkurti", "Evilsidio Tosku", "Nensi Ahmetbeja", "Ina Peleshka"],
             [
@@ -1983,7 +1972,7 @@ public sealed class InnovationDashboardStore
             startDate,
             endDate,
             10,
-            new ProjectOkr(20, 25, 30, 35, 25),
+            new ProjectOkr(20, 25, 30, 35),
             RiskLevels.Medium,
             teamMembers.Select(member => member.Name).ToList(),
             teamMembers,
@@ -2013,7 +2002,6 @@ public sealed class InnovationDashboardStore
         var qualityScore = Math.Clamp(progress + 28, 45, 96);
         var impactScore = Math.Clamp(progress + 24, 45, 97);
         var dynamicsScore = Math.Clamp(progress + 16, 38, 95);
-        var capacityScore = Math.Clamp(progress + 14, 36, 94);
         var priority = (projectNumber % 4) switch
         {
             0 => ProjectPriorities.Critical,
@@ -2052,7 +2040,7 @@ public sealed class InnovationDashboardStore
             IsoOffset(-90 - (projectNumber * 12)),
             IsoOffset(status == ProjectStatuses.Completed ? -15 : 120 + (projectNumber * 20)),
             progress,
-            new ProjectOkr(deadlineScore, qualityScore, impactScore, dynamicsScore, capacityScore),
+            new ProjectOkr(deadlineScore, qualityScore, impactScore, dynamicsScore),
             risk,
             members.Select(member => member.Name).ToList(),
             members,
