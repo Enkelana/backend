@@ -12,6 +12,7 @@ public static class ServiceRegistration
         services.AddHttpClient();
         services.AddSingleton<IDashboardStorePersistence, PostgresDashboardStorePersistence>();
         services.AddSingleton<InnovationDashboardStore>();
+        services.AddHostedService<DashboardStoreInitializer>();
         services.AddSingleton<IInnovationDashboardRepository, InnovationDashboardRepository>();
 
         services.AddSingleton<IUserContextService, UserContextService>();

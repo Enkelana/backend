@@ -36,6 +36,7 @@ public sealed class InnovationDashboardStore
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<InnovationDashboardStore> _logger;
     private readonly IDashboardStorePersistence _persistence;
+    private readonly SemaphoreSlim _persistenceLock = new(1, 1);
 
     public InnovationDashboardStore(
         IHttpClientFactory httpClientFactory,
@@ -49,10 +50,9 @@ public sealed class InnovationDashboardStore
         _portfolioObjectives = BuildPortfolioObjectives();
         _updates = BuildUpdates();
         _changeProposals = [];
-        LoadPersistedSnapshot();
     }
 
-    private void LoadPersistedSnapshot()
+    public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         if (!_persistence.IsConfigured)
         {
@@ -62,10 +62,10 @@ public sealed class InnovationDashboardStore
 
         try
         {
-            var payload = _persistence.LoadSnapshotAsync().GetAwaiter().GetResult();
+            var payload = await _persistence.LoadSnapshotAsync(cancellationToken);
             if (string.IsNullOrWhiteSpace(payload))
             {
-                PersistSnapshot();
+                await SaveSnapshotAsync(JsonSerializer.Serialize(BuildSnapshot(), SnapshotJsonOptions), cancellationToken);
                 return;
             }
 
@@ -92,11 +92,41 @@ public sealed class InnovationDashboardStore
         try
         {
             var payload = JsonSerializer.Serialize(BuildSnapshot(), SnapshotJsonOptions);
-            _persistence.SaveSnapshotAsync(payload).GetAwaiter().GetResult();
+            _ = SaveSnapshotAsync(payload);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(exception, "Dashboard state could not be serialized for PostgreSQL.");
+        }
+    }
+
+    private async Task SaveSnapshotAsync(string payload, CancellationToken cancellationToken = default)
+    {
+        if (!_persistence.IsConfigured)
+        {
+            return;
+        }
+
+        var lockTaken = false;
+        try
+        {
+            await _persistenceLock.WaitAsync(cancellationToken);
+            lockTaken = true;
+            await _persistence.SaveSnapshotAsync(payload, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
         }
         catch (Exception exception)
         {
             _logger.LogError(exception, "Dashboard state could not be saved to PostgreSQL.");
+        }
+        finally
+        {
+            if (lockTaken)
+            {
+                _persistenceLock.Release();
+            }
         }
     }
 
