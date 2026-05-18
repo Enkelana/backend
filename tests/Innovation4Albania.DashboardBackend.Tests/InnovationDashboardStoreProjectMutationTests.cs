@@ -1,4 +1,6 @@
+using Innovation4Albania.DashboardBackend.Api.Constants;
 using Innovation4Albania.DashboardBackend.Api.Data;
+using Innovation4Albania.DashboardBackend.Api.Models;
 
 namespace Innovation4Albania.DashboardBackend.Tests;
 
@@ -89,6 +91,38 @@ public sealed class InnovationDashboardStoreProjectMutationTests
         Assert.True(created.IsSuccess);
         Assert.Equal("p8", created.Response!.Id);
         Assert.Equal(projectIds.Count, projectIds.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+    }
+
+    [Fact]
+    public async Task TryCreateProjectAsync_AssignsUniqueIdsForConcurrentCreates()
+    {
+        var store = StoreTestHelpers.CreateStore();
+        var context = StoreTestHelpers.DirectorContext();
+
+        var results = await Task.WhenAll(Enumerable.Range(1, 20)
+            .Select(index => Task.Run(() => store.TryCreateProjectAsync(
+                context,
+                StoreTestHelpers.ValidProjectRequest() with { Code = $"CONCURRENT-{index:000}", Name = $"Projekt paralel {index}" }))));
+        var ids = results.Select(result => result.Response!.Id).ToList();
+
+        Assert.All(results, result => Assert.True(result.IsSuccess));
+        Assert.Equal(ids.Count, ids.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+    }
+
+    [Fact]
+    public async Task TryCreateWeeklyUpdateAsync_AssignsUniqueIdsForConcurrentUpdates()
+    {
+        var store = StoreTestHelpers.CreateStore();
+        var context = StoreTestHelpers.DirectorContext();
+
+        var results = await Task.WhenAll(Enumerable.Range(1, 20)
+            .Select(index => Task.Run(() => store.TryCreateWeeklyUpdateAsync(
+                context,
+                new CreateWeeklyUpdateRequest("p1", $"Ekspert {index}", 40 + index, ProjectStatuses.Active, RiskLevels.Medium, "", $"Koment {index}")))));
+        var ids = results.Select(result => result.Response!.Id).ToList();
+
+        Assert.All(results, result => Assert.True(result.IsSuccess));
+        Assert.Equal(ids.Count, ids.Distinct(StringComparer.OrdinalIgnoreCase).Count());
     }
 
     private sealed class BlockingPersistence : IDashboardStorePersistence

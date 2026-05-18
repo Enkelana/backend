@@ -36,6 +36,7 @@ public sealed class InnovationDashboardStore
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<InnovationDashboardStore> _logger;
     private readonly IDashboardStorePersistence _persistence;
+    private readonly SemaphoreSlim _mutationLock = new(1, 1);
     private readonly SemaphoreSlim _persistenceLock = new(1, 1);
 
     public InnovationDashboardStore(
@@ -131,6 +132,19 @@ public sealed class InnovationDashboardStore
             {
                 _persistenceLock.Release();
             }
+        }
+    }
+
+    private async Task<T> ExecuteMutationAsync<T>(Func<Task<T>> mutation)
+    {
+        await _mutationLock.WaitAsync();
+        try
+        {
+            return await mutation();
+        }
+        finally
+        {
+            _mutationLock.Release();
         }
     }
 
@@ -401,6 +415,8 @@ public sealed class InnovationDashboardStore
 
     public async Task<(bool IsSuccess, ProjectResponse? Response, string? Error)> TryCreateProjectAsync(UserContext context, CreateProjectRequest request)
     {
+        return await ExecuteMutationAsync<(bool IsSuccess, ProjectResponse? Response, string? Error)>(async () =>
+        {
         if (!ApplicationRoles.CanCreateProjects(context.Role))
         {
             return (false, null, "Vetem Drejtori i Agjencise dhe Drejtori i Inovacionit Publik mund te krijojne projekte.");
@@ -448,9 +464,12 @@ public sealed class InnovationDashboardStore
         return await PersistSnapshotAsync()
             ? (true, response, null)
             : (false, null, "Ndryshimi nuk u ruajt ne PostgreSQL. Provo perseri.");
+        });
     }
     public async Task<(bool IsSuccess, ProjectResponse? Response, string? Error)> TryUpdateProjectAsync(UserContext context, string id, CreateProjectRequest request)
     {
+        return await ExecuteMutationAsync<(bool IsSuccess, ProjectResponse? Response, string? Error)>(async () =>
+        {
         if (!ApplicationRoles.CanCreateProjects(context.Role))
         {
             return (false, null, "Vetem Drejtori i Agjencise dhe Drejtori i Inovacionit Publik mund te editojne projekte.");
@@ -481,10 +500,13 @@ public sealed class InnovationDashboardStore
         return await PersistSnapshotAsync()
             ? (true, response, null)
             : (false, null, "Ndryshimi nuk u ruajt ne PostgreSQL. Provo perseri.");
+        });
     }
 
     public async Task<(bool IsSuccess, string? Error)> TryDeleteProjectAsync(UserContext context, string id)
     {
+        return await ExecuteMutationAsync<(bool IsSuccess, string? Error)>(async () =>
+        {
         if (!ApplicationRoles.CanCreateProjects(context.Role))
         {
             return (false, "Vetem Drejtori i Agjencise dhe Drejtori i Inovacionit Publik mund te fshijne projekte.");
@@ -505,6 +527,7 @@ public sealed class InnovationDashboardStore
         return await PersistSnapshotAsync()
             ? (true, null)
             : (false, "Ndryshimi nuk u ruajt ne PostgreSQL. Provo perseri.");
+        });
     }
     private static bool TryValidateProjectRequest(CreateProjectRequest request, out string? error)
     {
@@ -656,6 +679,8 @@ public sealed class InnovationDashboardStore
 
     public async Task<(bool IsSuccess, ObjectiveResponse? Response, string? Error)> TryCreatePortfolioObjectiveAsync(UserContext context, CreatePortfolioObjectiveRequest request)
     {
+        return await ExecuteMutationAsync<(bool IsSuccess, ObjectiveResponse? Response, string? Error)>(async () =>
+        {
         if (!ApplicationRoles.CanManagePortfolio(context.Role))
         {
             return (false, null, "Vetem Drejtori i Inovacionit mund te shtoje OKR te portofolit.");
@@ -672,10 +697,13 @@ public sealed class InnovationDashboardStore
         return await PersistSnapshotAsync()
             ? (true, response, null)
             : (false, null, "Ndryshimi nuk u ruajt ne PostgreSQL. Provo perseri.");
+        });
     }
 
     public async Task<(bool IsSuccess, ObjectiveResponse? Response, string? Error)> TryUpdatePortfolioObjectiveAsync(UserContext context, string id, CreatePortfolioObjectiveRequest request)
     {
+        return await ExecuteMutationAsync<(bool IsSuccess, ObjectiveResponse? Response, string? Error)>(async () =>
+        {
         if (!ApplicationRoles.CanManagePortfolio(context.Role))
         {
             return (false, null, "Vetem Drejtori i Inovacionit mund te editoje OKR te portofolit.");
@@ -698,10 +726,13 @@ public sealed class InnovationDashboardStore
         return await PersistSnapshotAsync()
             ? (true, response, null)
             : (false, null, "Ndryshimi nuk u ruajt ne PostgreSQL. Provo perseri.");
+        });
     }
 
     public async Task<(bool IsSuccess, string? Error)> TryDeletePortfolioObjectiveAsync(UserContext context, string id)
     {
+        return await ExecuteMutationAsync<(bool IsSuccess, string? Error)>(async () =>
+        {
         if (!ApplicationRoles.CanManagePortfolio(context.Role))
         {
             return (false, "Vetem Drejtori i Inovacionit mund te fshije OKR te portofolit.");
@@ -716,6 +747,7 @@ public sealed class InnovationDashboardStore
         return await PersistSnapshotAsync()
             ? (true, null)
             : (false, "Ndryshimi nuk u ruajt ne PostgreSQL. Provo perseri.");
+        });
     }
     private static bool TryValidatePortfolioObjectiveRequest(CreatePortfolioObjectiveRequest request, out string? error)
     {
@@ -785,6 +817,8 @@ public sealed class InnovationDashboardStore
 
     public async Task<(bool IsSuccess, WeeklyUpdateResponse? Response, string? Error)> TryCreateWeeklyUpdateAsync(UserContext context, CreateWeeklyUpdateRequest request)
     {
+        return await ExecuteMutationAsync<(bool IsSuccess, WeeklyUpdateResponse? Response, string? Error)>(async () =>
+        {
         if (!ApplicationRoles.CanSubmitUpdates(context.Role))
         {
             return (false, null, "Vetem ekspertet dhe drejtori mund te shtojne perditesime dyjavore.");
@@ -839,6 +873,7 @@ public sealed class InnovationDashboardStore
         return await PersistSnapshotAsync()
             ? (true, response, null)
             : (false, null, "Ndryshimi nuk u ruajt ne PostgreSQL. Provo perseri.");
+        });
     }
 
     public IReadOnlyList<ProjectChangeProposalResponse> GetChangeProposals(UserContext context, string? projectId)
@@ -855,6 +890,8 @@ public sealed class InnovationDashboardStore
 
     public async Task<(bool IsSuccess, ProjectChangeProposalResponse? Response, string? Error)> TryCreateChangeProposalAsync(UserContext context, CreateProjectChangeProposalRequest request)
     {
+        return await ExecuteMutationAsync<(bool IsSuccess, ProjectChangeProposalResponse? Response, string? Error)>(async () =>
+        {
         if (!ApplicationRoles.CanProposeProjectChanges(context.Role))
         {
             return (false, null, "Vetem Ekspert Agjencie mund te propozoje ndryshime ne projekt.");
@@ -894,10 +931,13 @@ public sealed class InnovationDashboardStore
         return await PersistSnapshotAsync()
             ? (true, response, null)
             : (false, null, "Ndryshimi nuk u ruajt ne PostgreSQL. Provo perseri.");
+        });
     }
 
     public async Task<(bool IsSuccess, ProjectChangeProposalResponse? Response, string? Error)> TryResolveChangeProposalAsync(UserContext context, string id, string action)
     {
+        return await ExecuteMutationAsync<(bool IsSuccess, ProjectChangeProposalResponse? Response, string? Error)>(async () =>
+        {
         if (!ApplicationRoles.CanManagePortfolio(context.Role))
         {
             return (false, null, "Vetem Drejtori i Agjencise dhe Drejtori i Inovacionit Publik mund te shqyrtojne propozime.");
@@ -946,6 +986,7 @@ public sealed class InnovationDashboardStore
         return await PersistSnapshotAsync()
             ? (true, response, null)
             : (false, null, "Ndryshimi nuk u ruajt ne PostgreSQL. Provo perseri.");
+        });
     }
     public CalendarMonthResponse GetCalendarMonth(UserContext context, DateOnly month)
     {
